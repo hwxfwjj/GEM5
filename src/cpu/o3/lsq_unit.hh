@@ -873,14 +873,12 @@ class LSQUnit
         /** RAR replay queue related stats */
         statistics::Scalar RARQueueFull;
         statistics::Scalar RARQueueReplay;
-        statistics::Histogram RARQueueOccupancy;
-        statistics::Histogram RARQueueLatency;
+        statistics::Distribution RARQueueLatency;
 
         /** RAW replay queue related stats */
         statistics::Scalar RAWQueueFull;
         statistics::Scalar RAWQueueReplay;
-        statistics::Histogram RAWQueueOccupancy;
-        statistics::Histogram RAWQueueLatency;
+        statistics::Distribution RAWQueueLatency;
     } stats;
 
     void bankConflictReplay();

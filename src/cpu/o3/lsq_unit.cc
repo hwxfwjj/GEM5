@@ -742,12 +742,10 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
       ADD_STAT(unitStrideAligned, "Number of vector unitStride 16-byte aligned"),
       ADD_STAT(RARQueueFull, "Number of times RAR queue was full"),
       ADD_STAT(RARQueueReplay, "Number of instructions replayed from RAR queue"),
-      ADD_STAT(RARQueueOccupancy, "RAR queue occupancy distribution"),
-      ADD_STAT(RARQueueLatency, "RAR queue latency distribution"),
+      ADD_STAT(RARQueueLatency, statistics::units::Cycle::get(), "RAR queue latency distribution"),
       ADD_STAT(RAWQueueFull, "Number of times RAW queue was full"),
       ADD_STAT(RAWQueueReplay, "Number of instructions replayed from RAW queue"),
-      ADD_STAT(RAWQueueOccupancy, "RAW queue occupancy distribution"),
-      ADD_STAT(RAWQueueLatency, "RAW queue latency distribution")
+      ADD_STAT(RAWQueueLatency, statistics::units::Cycle::get(), "RAW queue latency distribution")
 {
     loadToUse
         .init(0, 299, 10)
@@ -756,24 +754,12 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
         .init(0, 299, 10)
         .flags(statistics::nozero);
 
-    // RAR queue occupancy: 0 to 64 entries
-    RARQueueOccupancy
-        .init(65)  // 0-64 entries (65 buckets)
-        .flags(statistics::nozero);
-
-    // RAR queue latency: 0 to 1000 cycles
     RARQueueLatency
-        .init(100)  // 100 buckets for latency distribution
+        .init(0, 500, 20)
         .flags(statistics::nozero);
 
-    // RAW queue occupancy: 0 to 64 entries
-    RAWQueueOccupancy
-        .init(65)  // 0-64 entries (65 buckets)
-        .flags(statistics::nozero);
-
-    // RAW queue latency: 0 to 1000 cycles
     RAWQueueLatency
-        .init(100)  // 100 buckets for latency distribution
+        .init(0, 500, 20)
         .flags(statistics::nozero);
 }
 
@@ -2785,14 +2771,6 @@ LSQUnit::updateCompletedIdx()
         }
     }
 
-    if (debug::LSQUnit) {
-        dumpInsts();
-    }
-
-    // Record queue occupancy statistics every cycle
-    stats.RARQueueOccupancy.sample(RARReplayQueue.size());
-    stats.RAWQueueOccupancy.sample(RAWReplayQueue.size());
-
     // Process replay queues after updating completed iterators
     processReplayQueues();
 }
@@ -3329,7 +3307,6 @@ LSQUnit::addToRARReplayQueue(const DynInstPtr &inst)
     // Record entry time for latency calculation
     inst->RARQueueEntryTick = curTick();
     RARReplayQueue.push_back(inst);
-    stats.RARQueueOccupancy.sample(RARReplayQueue.size());
 }
 
 void
@@ -3339,7 +3316,6 @@ LSQUnit::addToRAWReplayQueue(const DynInstPtr &inst)
     // Record entry time for latency calculation
     inst->RAWQueueEntryTick = curTick();
     RAWReplayQueue.push_back(inst);
-    stats.RAWQueueOccupancy.sample(RAWReplayQueue.size());
 }
 
 void
@@ -3357,9 +3333,6 @@ LSQUnit::processReplayQueues()
             continue;
         }
 
-        DPRINTF(LSQUnit, "inst [sn:%llu] loadCompletedIdx: %d, inst->lqItIdx: %d\n",
-                inst->seqNum, loadCompletedIdx, inst->lqIt.idx());
-
         // Check if distance condition is satisfied
         if (loadCompletedIdx >= loadQueue.head() && loadCompletedIdx <= loadQueue.tail()) {
             int loadDistance = inst->lqIt.idx() - loadCompletedIdx;
@@ -3371,7 +3344,8 @@ LSQUnit::processReplayQueues()
                 // Record latency statistics
                 if (inst->RARQueueEntryTick != (Tick)-1) {
                     Tick latency = curTick() - inst->RARQueueEntryTick;
-                    stats.RARQueueLatency.sample(latency);
+                    Cycles cycleLatency = cpu->ticksToCycles(latency);
+                    stats.RARQueueLatency.sample(cycleLatency);
                 }
                 stats.RARQueueReplay++;
 
@@ -3417,7 +3391,8 @@ LSQUnit::processReplayQueues()
                 // Record latency statistics
                 if (inst->RAWQueueEntryTick != (Tick)-1) {
                     Tick latency = curTick() - inst->RAWQueueEntryTick;
-                    stats.RAWQueueLatency.sample(latency);
+                    Cycles cycleLatency = cpu->ticksToCycles(latency);
+                    stats.RAWQueueLatency.sample(cycleLatency);
                 }
                 stats.RAWQueueReplay++;
 
