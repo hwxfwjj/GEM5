@@ -1148,6 +1148,8 @@ class Request
      */
     void incAccessDepth() const { depth++; }
     int getAccessDepth() const { return depth; }
+    void decAccessDepth() const { assert(depth > -1); if (depth > 0) depth--; }
+
 
     /**
      * Set/Get the time taken for this request to be successfully translated.

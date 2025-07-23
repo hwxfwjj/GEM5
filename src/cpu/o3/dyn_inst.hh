@@ -44,12 +44,14 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdio>
 #include <deque>
 #include <list>
 #include <string>
 
 #include "base/refcnt.hh"
 #include "base/trace.hh"
+#include "base/types.hh"
 #include "config/the_isa.hh"
 #include "cpu/checker/cpu.hh"
 #include "cpu/exec_context.hh"
@@ -67,7 +69,9 @@
 #include "debug/CommitTrace.hh"
 #include "debug/DecoupleBP.hh"
 #include "debug/HtmCpu.hh"
+#include "debug/LoadPipeline.hh"
 #include "debug/RiscvMisc.hh"
+#include "sim/cur_tick.hh"
 
 namespace gem5
 {
@@ -189,6 +193,7 @@ class DynInst : public ExecContext, public RefCounted
         NukeReplay,
         CacheBlockedReplay,
         BankConflicyReplay,
+        MshrArbFailReplay,
         SkipFollowingPipe,
 
         // load/store pipe state end
@@ -942,6 +947,7 @@ class DynInst : public ExecContext, public RefCounted
                     (1 << NukeReplay) |
                     (1 << CacheBlockedReplay) |
                     (1 << BankConflicyReplay) |
+                    (1 << MshrArbFailReplay) |
                     (1 << SkipFollowingPipe));
         status.set(InPipe);
     }
@@ -957,6 +963,7 @@ class DynInst : public ExecContext, public RefCounted
 
     // only can be set once!!!
     void setNeedReplay() {
+        DPRINTF(LoadPipeline, "setNeedReplay %s\n", *pc);
         assert(!status[NeedReplay]);
         status.set(NeedReplay);
     }
@@ -982,6 +989,9 @@ class DynInst : public ExecContext, public RefCounted
 
     void setBankConflicyReplay() { setNeedReplay(); status.set(BankConflicyReplay); }
     bool needBankConflicyReplay() const { return status[BankConflicyReplay]; }
+    //MSHR Replay
+    void setMshrArbFailReplay() { setNeedReplay(); status.set(MshrArbFailReplay); }
+    bool needMshrArbFailReplay() const { return status[MshrArbFailReplay]; }
 
     void setFullForward() { status.set(FullForward); }
     bool fullForward() const { return status[FullForward]; }

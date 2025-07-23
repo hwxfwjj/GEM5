@@ -45,13 +45,17 @@
 
 #include "mem/cache/base.hh"
 
+#include <cstdio>
+
 #include "base/compiler.hh"
 #include "base/logging.hh"
+#include "base/named.hh"
 #include "base/output.hh"
 #include "base/statistics.hh"
 #include "base/stats/group.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
+#include "cpu/inst_seq.hh"
 #include "debug/ArchDB.hh"
 #include "debug/Cache.hh"
 #include "debug/CacheComp.hh"
@@ -59,6 +63,7 @@
 #include "debug/CacheRepl.hh"
 #include "debug/CacheVerbose.hh"
 #include "debug/HWPrefetch.hh"
+#include "debug/MSHR.hh"
 #include "debug/TagReadFail.hh"
 #include "mem/cache/compressors/base.hh"
 #include "mem/cache/mshr.hh"
@@ -137,6 +142,7 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       sliceNum(p.slice_num),
       freeTagLoadReadPorts(p.tag_load_read_ports),
       lastTagAccessCheckCycle(0),
+      lastMSHRAllocCycle(0),
       compressor(p.compressor),
       prefetcher(p.prefetcher),
       writeAllocator(p.write_allocator),
@@ -439,6 +445,7 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                                    pkt->getBlockAddr(blkSize));
     }
 
+
     if (mshr) {
         /// MSHR hit
         /// @note writebacks will be checked in getNextMSHR()
@@ -478,6 +485,20 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                 }
                 DPRINTF(Cache, "%s: miss on late pref: %i, pref source: %i, coalescing cpu requests: %i\n", __func__,
                         pkt->missOnLatePf, pkt->pfSource, pkt->coalescingMSHR);
+
+
+            uint64_t curCycle = ticksToCycles(curTick());
+            if (cacheLevel == 1 && name() == "system.cpu.dcache" && lastMSHRAllocCycle == curCycle) {
+                DPRINTF(MSHR, "MSHR arbiter failed for %s at cycle %llu\n",
+                        pkt->print(), curCycle);
+                pkt->setMshrArbFailed();
+                pkt->req->decAccessDepth();
+                return;
+            } else {
+                lastMSHRAllocCycle = curCycle;
+                DPRINTF(MSHR, "MSHR arbiter success for %s at cycle %llu\n",
+                        pkt->print(), curCycle);
+            }
 
                 // We use forward_time here because it is the same
                 // considering new targets. We have multiple
@@ -531,10 +552,24 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                     pkt->req->isCacheMaintenance());
                 blk->clearCoherenceBits(CacheBlk::ReadableBit);
             }
+            uint64_t curCycle = ticksToCycles(curTick());
+            if (cacheLevel == 1 && name() == "system.cpu.dcache" && lastMSHRAllocCycle == curCycle) {
+                DPRINTF(MSHR, "MSHR arbiter failed for %s at cycle %llu\n",
+                        pkt->print(), curCycle);
+                pkt->setMshrArbFailed();
+                pkt->req->decAccessDepth();
+                return;
+            } else {
+                lastMSHRAllocCycle = curCycle;
+                DPRINTF(MSHR, "MSHR arbiter success for %s at cycle %llu\n",
+                        pkt->print(), curCycle);
+            }
+
             // Here we are using forward_time, modelling the latency of
             // a miss (outbound) just as forwardLatency, neglecting the
             // lookupLatency component.
             allocateMissBuffer(pkt, forward_time);
+
         }
     }
 }
@@ -3128,6 +3163,7 @@ BaseCache::CpuSidePort::tryTiming(PacketPtr pkt)
     }
     mustSendRetry = false;
     return true;
+
 }
 
 bool
@@ -3142,7 +3178,26 @@ BaseCache::CpuSidePort::recvTimingReq(PacketPtr pkt)
         assert(success);
         return true;
     } else if (tryTiming(pkt)) {
+        pkt->clearMshrArbFailed();
         cache->recvTimingReq(pkt);
+        if (pkt->mshrArbFailed()) {
+            // If the MSHR arbitration failed, we need to retry later.
+            // We will schedule a retry event to try again.
+            if (sendRetryEvent.scheduled()) {
+                owner.reschedule(sendRetryEvent, cache->nextCycle());
+                DPRINTF(Cache, "MSHR arbitration failed for pkt %s, qretrying later\n",
+                    pkt->print());
+            } else {
+                owner.schedule(sendRetryEvent, cache->nextCycle());
+                DPRINTF(Cache, "MSHR arbitration failed for pkt %s, pretrying later\n",
+                    pkt->print());
+            }
+            //Indicate that we are waiting for a retry.
+            // mustSendRetry = true;
+            // DPRINTF(Cache, "MSHR arbitration failed for pkt %s, retrying later\n",
+            //         pkt->print());
+            return false;
+        }
         return true;
     }
     return false;

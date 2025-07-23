@@ -545,7 +545,7 @@ class LSQUnit
 
     void tagReadFailReplaySchedule();
 
-    bool trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, bool &tag_read_fail);
+    bool trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, bool &tag_read_fail, bool &mshr_used);
 
     bool sbufferSendPacket(PacketPtr data_pkt);
 

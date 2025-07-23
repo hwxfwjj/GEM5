@@ -1271,6 +1271,10 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
     assert(!inst->isSquashed());
     LSQRequest* request = inst->savedRequest;
 
+    if (inst->needMshrArbFailReplay()) {
+        return fault;
+    }
+
     if (inst->wakeUpEarly()) {
         auto& bus = getLsq()->bus;
         bool busFwdSuccess = bus.find(inst->seqNum) != bus.end();
@@ -1413,6 +1417,8 @@ LSQUnit::executeLoadPipeSx()
                 DPRINTF(LoadPipeline, "Load [sn:%llu] replayed\n", inst->seqNum);
 
                 if (inst->needBankConflicyReplay()) inst->issueQue->retryMem(inst);
+                else if (inst->needMshrArbFailReplay())
+                    inst->issueQue->retryMem(inst);
                 else if (inst->needCacheMissReplay()) iewStage->cacheMissLdReplay(inst);
                 else if (inst->needNukeReplay()) {
                     if (inst->cacheHit()) {
@@ -2488,7 +2494,7 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
 }
 
 bool
-LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, bool &tag_read_fail)
+LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, bool &tag_read_fail, bool &mshr_used)
 {
     // sbuffer do not call this
     if (lsq->getLastConflictCheckTick() != curTick()) {
@@ -2496,7 +2502,7 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
     }
     bool ret = true;
     bool cache_got_blocked = false;
-
+    mshr_used = false;
     LSQRequest *request = dynamic_cast<LSQRequest *>(data_pkt->senderState);
     if (isLoad) {
         bank_conflict = lsq->bankConflictedCheck(data_pkt->req->getVaddr());
@@ -2506,6 +2512,10 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
     data_pkt->sendTick = curTick();
     PacketPtr pkt = data_pkt;
 
+    auto inst = dynamic_cast<LSQRequest *>(data_pkt->senderState)->instruction();
+
+    DPRINTF(LSQUnit, "Attempting to send packet for inst [sn:%llu], addr: %#x\n",
+            inst->seqNum, data_pkt->getAddr());
     if (!lsq->cacheBlocked() && lsq->cachePortAvailable(isLoad)) {
         if (bank_conflict) {
             ++stats.bankConflictTimes;
@@ -2519,9 +2529,18 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
         }
         if (!bank_conflict && !dcachePort->sendTimingReq(data_pkt)) {
             ret = false;
-            tag_read_fail = data_pkt->tagReadFail;
-            if (!tag_read_fail) {
-                cache_got_blocked = true;
+            mshr_used = data_pkt->mshrArbFailed();
+
+            if (mshr_used) {
+                DynInstPtr inst = dynamic_cast<LSQRequest *>(data_pkt->senderState)->instruction();
+                // inst->setMshrArbFailReplay();
+            }
+
+            else{
+                tag_read_fail = data_pkt->tagReadFail;
+                if (!tag_read_fail) {
+                    cache_got_blocked = true;
+                }
             }
         }
     } else {
@@ -3093,7 +3112,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         request->buildPackets();
         // if the cache is not blocked, do cache access
         request->sendPacketToCache();
-        if (!request->isSent() && !load_inst->needBankConflicyReplay()) {
+        if (!request->isSent() && !load_inst->needBankConflicyReplay() && !load_inst->needMshrArbFailReplay()) {
             iewStage->blockMemInst(load_inst);
             load_inst->setCacheBlockedReplay();
             DPRINTF(LoadPipeline, "Load [sn:%llu] setCacheBlockedReplay\n", load_inst->seqNum);

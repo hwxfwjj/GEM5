@@ -46,6 +46,8 @@
 #ifndef __MEM_CACHE_BASE_HH__
 #define __MEM_CACHE_BASE_HH__
 
+#include <sys/types.h>
+
 #include <cassert>
 #include <cstdint>
 #include <queue>
@@ -400,6 +402,8 @@ class BaseCache : public ClockedObject, CacheAccessor
     unsigned freeTagLoadReadPorts;
 
     Cycles lastTagAccessCheckCycle;
+
+    uint64_t lastMSHRAllocCycle;
 
     /** Compression method being used. */
     compression::Base* compressor;

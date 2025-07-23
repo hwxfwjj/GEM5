@@ -360,7 +360,11 @@ class Packet : public Printable
 
         // Signal block present to squash prefetch and cache evict packets
         // through express snoop flag
-        BLOCK_CACHED          = 0x00010000
+        BLOCK_CACHED          = 0x00010000,
+
+        //To check if the MSHR arbiter has failed to allocate an MSHR
+        // for this packet.
+        MSHR_ARB_FAILED       = 0x00020000
     };
 
     Flags flags;
@@ -779,6 +783,11 @@ class Packet : public Printable
     void setBlockCached()          { flags.set(BLOCK_CACHED); }
     bool isBlockCached() const     { return flags.isSet(BLOCK_CACHED); }
     void clearBlockCached()        { flags.clear(BLOCK_CACHED); }
+
+    //MSHR arbiter failure flag handle
+    void setMshrArbFailed() { flags.set(MSHR_ARB_FAILED); }
+    bool mshrArbFailed() const { return flags.isSet(MSHR_ARB_FAILED); }
+    void clearMshrArbFailed() { flags.clear(MSHR_ARB_FAILED); }
 
     /**
      * QoS Value getter

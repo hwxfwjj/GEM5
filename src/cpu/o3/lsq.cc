@@ -1769,7 +1769,9 @@ LSQ::SingleDataRequest::sendPacketToCache()
     assert(_numOutstandingPackets == 0);
     bool bank_conflict = false;
     bool tag_read_fail = false;
-    bool success = lsqUnit()->trySendPacket(isLoad(), _packets.at(0), bank_conflict, tag_read_fail);
+    bool mshr_used = false;
+
+    bool success = lsqUnit()->trySendPacket(isLoad(), _packets.at(0), bank_conflict, tag_read_fail, mshr_used);
     if (success) {
         if (isLoad()) {
             assert(lsqUnit()->inflightLoads.size() < lsqUnit()->numLoads() + 4);
@@ -1789,6 +1791,12 @@ LSQ::SingleDataRequest::sendPacketToCache()
         DPRINTF(LoadPipeline, "Load [sn:%ld] setBankConflicyReplay\n",
                 _inst->seqNum);
     }
+    if (mshr_used) {
+        instruction()->setMshrArbFailReplay();
+        // _packets.at(0)->clearMshrArbFailed();
+        DPRINTF(LoadPipeline, "Load [sn:%ld] setMshrArbFailReplay\n",
+                _inst->seqNum);
+    }
     if (tag_read_fail) {
         DPRINTF(TagReadFail, "sendPacketToCache fails addr: %lx\n", _packets.at(0)->getAddr());
         lsqUnit()->tagReadFailReplaySchedule();
@@ -1802,9 +1810,10 @@ LSQ::SplitDataRequest::sendPacketToCache()
     /* Try to send the packets. */
     bool bank_conflict = false;
     bool tag_read_fail = false;
+    bool mshr_used = false;
     while (numReceivedPackets + _numOutstandingPackets < _packets.size()) {
         bool success = lsqUnit()->trySendPacket(isLoad(), _packets.at(numReceivedPackets + _numOutstandingPackets),
-                                                bank_conflict, tag_read_fail);
+                                                bank_conflict, tag_read_fail, mshr_used);
         if (success) {
             _numOutstandingPackets++;
         } else {
@@ -1817,7 +1826,13 @@ LSQ::SplitDataRequest::sendPacketToCache()
     if (tag_read_fail) {
         lsqUnit()->tagReadFailReplaySchedule();
     }
-
+    //
+    if (mshr_used) {
+        instruction()->setMshrArbFailReplay();
+        // _packets.at(0)->clearMshrArbFailed();
+        DPRINTF(LoadPipeline, "Load [sn:%ld] setMshrArbFailReplay\n",
+                _inst->seqNum);
+    }
     if (_numOutstandingPackets == _packets.size()) {
         LSQRequest::_inst->hasPendingCacheReq(true);
         LSQRequest::_inst->pendingCacheReq = this;
