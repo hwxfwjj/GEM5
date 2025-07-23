@@ -329,13 +329,15 @@ class LSQUnit
     /** Constructs an LSQ unit. init() must be called prior to use. */
     LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries,
       uint32_t sbufferEvictThreshold, uint64_t storeBufferInactiveThreshold,
-      uint32_t ldPipeStages, uint32_t stPipeStages, uint32_t maxRARQEntries, uint32_t maxRAWQEntries);
+      uint32_t ldPipeStages, uint32_t stPipeStages, uint32_t maxRARQEntries, uint32_t maxRAWQEntries,
+      unsigned rarDequeuePerCycle, unsigned rawDequeuePerCycle);
 
     /** We cannot copy LSQUnit because it has stats for which copy
      * contructor is deleted explicitly. However, STL vector requires
      * a valid copy constructor for the base type at compile time.
      */
-    LSQUnit(const LSQUnit &l) : maxRARQEntries(0), maxRAWQEntries(0), stats(nullptr)
+    LSQUnit(const LSQUnit &l) : maxRARQEntries(0), maxRAWQEntries(0),
+        rarDequeuePerCycle(0), rawDequeuePerCycle(0), stats(nullptr)
     {
         panic("LSQUnit is not copy-able");
     }
@@ -782,14 +784,25 @@ class LSQUnit
 
     unsigned lastClockSQPopEntries;
     unsigned lastClockLQPopEntries;
-
-    /** RARReplayQueue for instructions waiting due to RAR dependency */
-    std::deque<DynInstPtr> RARReplayQueue;
+    /** Store requests for potential RAR violations */
+    std::list<DynInstPtr> RARQueue;
     const int maxRARQEntries;
 
-    /** RAWReplayQueue for instructions waiting due to RAW dependency */
-    std::deque<DynInstPtr> RAWReplayQueue;
+    /** Store requests for potential RAW violations */
+    std::list<DynInstPtr> RAWQueue;
     const int maxRAWQEntries;
+
+    /** Maximum number of instructions to dequeue from RAR queue per cycle */
+    const unsigned rarDequeuePerCycle;
+
+    /** Maximum number of instructions to dequeue from RAW queue per cycle */
+    const unsigned rawDequeuePerCycle;
+
+    /** RARReplayQueue for instructions waiting due to RAR dependency */
+    std::list<DynInstPtr> RARReplayQueue;
+
+    /** RAWReplayQueue for instructions waiting due to RAW dependency */
+    std::list<DynInstPtr> RAWReplayQueue;
 
     /** Process instructions in RARReplayQueue and RAWReplayQueue */
     void processReplayQueues();

@@ -180,6 +180,8 @@ class BaseO3CPU(BaseCPU):
 
     RARQEntries = Param.Unsigned(72, "Number of RAR queue entries")
     RAWQEntries = Param.Unsigned(32, "Number of RAW queue entries")
+    RARDequeuePerCycle = Param.Unsigned(3, "Maximum number of instructions to dequeue from RAR queue per cycle")
+    RAWDequeuePerCycle = Param.Unsigned(3, "Maximum number of instructions to dequeue from RAW queue per cycle")
 
     SbufferEntries = Param.Unsigned(16, "Number of store buffer entries")
     SbufferEvictThreshold = Param.Unsigned(7, "store buffer eviction threshold")
