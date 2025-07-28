@@ -401,7 +401,12 @@ void MPTCache52::initMPTCacheFromParams(const RiscvTLBParams *params)
     globalMPTCache = new MPTCache52();  // 默认构造函数会用上面这 5 个静态值
 
     //"在 gem5 中像这样用于全局单例（global singleton）的 new，不需要手动释放（不需要 delete）"
-    DPRINTF(TLB, "Initialized globalMPTCache with size = %d\n", params->mptcache_size);
+    DPRINTF(TLB, "Initialized globalMPTCache with size = L0:%d L1:%d L2:%d L3:%d SP:%d\n",
+    params->mptcache_l0_size,
+    params->mptcache_l1_size,
+    params->mptcache_l2_size,
+    params->mptcache_l3_size,
+    params->mptcache_sp_size);
 }
 
 	  
