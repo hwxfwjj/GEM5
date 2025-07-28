@@ -236,7 +236,7 @@ MPTE52 MPT::walk(Addr vaddr, ThreadContext *tc, PMAChecker *pma, PMP *pmp, int &
 void MPT::walkDelayed(Addr vaddr,
                       ThreadContext *tc,
                       PMAChecker *pma, PMP *pmp,
-                      std::function<void(MPTE52)> callback) const
+                      std::function<void(MPTE52)> callback) //const
 {
     int accessCounter = 0;
     MPTE52 result = walk(vaddr, tc, pma, pmp, accessCounter); // 使用同步接口立即生成结果（只模拟“等这么久才交结果”）
@@ -457,7 +457,7 @@ void MPTCache52::fetchDelayed(
     const MPT &mpt,
     ThreadContext *tc,
     PMAChecker *pma, PMP *pmp,
-    std::function<void(bool /*hit*/, MPTCacheEntry)> callback) const
+    std::function<void(bool /*hit*/, MPTCacheEntry)> callback) //const
     //callback是一个函数指针的封装，类型是：std::function<void(bool, MPTCacheEntry)>
 {
     Addr aligned = regionAlign(pa, level);

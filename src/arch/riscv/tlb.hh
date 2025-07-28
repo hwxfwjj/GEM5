@@ -131,7 +131,7 @@ struct MPT {
     void walkDelayed(Addr vaddr,
                      ThreadContext *tc,
                      PMAChecker *pma, PMP *pmp,
-                     std::function<void(MPTE52)> callback) const;
+                     std::function<void(MPTE52)> callback); //const;
 
 };
 #endif //MPT_ENABLED
@@ -230,7 +230,7 @@ class MPTCache52 {
           const MPT &mpt,
           ThreadContext *tc,
           PMAChecker *pma, PMP *pmp,
-          std::function<void(bool /*hit*/, MPTCacheEntry)> callback) const;
+          std::function<void(bool /*hit*/, MPTCacheEntry)> callback);// const;
           //callback是一个函数指针的封装，类型是：std::function<void(bool, MPTCacheEntry)>
 
 };
