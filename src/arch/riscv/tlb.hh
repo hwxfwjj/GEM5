@@ -87,6 +87,18 @@
 #define MPT_CACHE_SIZE 128    //MPT_CACHE_SIZE 默认为128. 需要在编译时自定义！
 #endif
 
+
+	#if MPT_ENABLED
+	extern gem5::RiscvISA::MPT globalMPT;//globalMPT/mptcache是在mmu_mpt_and_mptcache-Smmpt52.cc中创建的。
+	//相应地，在tlb.cc中定义的TLB类构造函数中，也不包括mpt mptcache的初始化。
+	  #if MPT_CACHE_ENABLED
+	  //extern MPTCache52 globalMPTCache;
+	  extern gem5::RiscvISA::MPTCache52* globalMPTCache;
+	  #endif
+
+	#endif
+
+  
 namespace gem5
 {
 
@@ -286,15 +298,7 @@ class TLB : public BaseTLB
 
     Walker *walker;
 
-	#if MPT_ENABLED
-	extern gem5::RiscvISA::MPT globalMPT;//globalMPT/mptcache是在mmu_mpt_and_mptcache-Smmpt52.cc中创建的。
-	//相应地，在tlb.cc中定义的TLB类构造函数中，也不包括mpt mptcache的初始化。
-	  #if MPT_CACHE_ENABLED
-	  //extern MPTCache52 globalMPTCache;
-	  extern gem5::RiscvISA::MPTCache52* globalMPTCache;
-	  #endif
 
-	#endif
 
     struct TlbStats : public statistics::Group
     {
