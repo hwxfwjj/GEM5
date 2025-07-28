@@ -266,7 +266,8 @@ void MPT::walkDelayed(Addr vaddr,
 
 
 #if MPT_ENABLED
-MPT globalMPT;
+//MPT globalMPT;
+gem5::RiscvISA::MPT gem5::RiscvISA::globalMPT;
 #endif
 
 
