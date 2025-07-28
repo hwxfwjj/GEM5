@@ -127,6 +127,7 @@ Addr MPT::buildSimulatedMPTTree(int levels) {
     return lowerPPN;
 }
 
+/*
 uint64_t MPT::readMPTE(Addr paddr, ThreadContext *tc, PMAChecker *pma, PMP *pmp, int &accessCounter) const {
     // ① 构造 Request
     RequestPtr req = std::make_shared<Request>(
@@ -156,7 +157,39 @@ uint64_t MPT::readMPTE(Addr paddr, ThreadContext *tc, PMAChecker *pma, PMP *pmp,
         return 0;
     }
 }
+*/
 
+uint64_t MPT::readMPTE(Addr paddr, ThreadContext *tc, PMAChecker *pma, PMP *pmp, int &accessCounter) const
+{
+    //  1. 构造 Request, 获取 MasterId：直接从 tc 获取
+    RequestPtr req = std::make_shared<Request>(
+        paddr,
+        sizeof(MPTE52),
+        Request::PHYSICAL,
+        tc->getMasterId()
+    );
+
+    // 2 PMA 检查
+    pma->check(req);
+
+    // 3 获取特权级：类内成员函数调用
+    PrivilegeMode pmode = this->getMemPriv(tc, BaseMMU::Read);
+
+    gem5::Fault fault = pmp->pmpCheck(req, BaseMMU::Read, pmode, tc);
+
+    if (fault != NoFault) {
+        panic("PMP blocked access to MPTE at 0x%lx\n", paddr);
+    }
+
+    // 4 模拟 memory 读取
+    auto it = simulatedMPTMemory.find(paddr);
+    if (it != simulatedMPTMemory.end()) {
+        accessCounter++;  // 每次模拟访问memory都累加
+        return it->second.raw;
+    } else {
+        return 0;
+    }
+}
 
 
 // Smmp52 多级 MPT 遍历，根据虚拟地址返回 MPTE52（或无效项）
