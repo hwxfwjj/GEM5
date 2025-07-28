@@ -1727,10 +1727,10 @@ TLB::L2TLBCheck(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode, Addr
                 //大页合法性校验通过
                 // a、d 校验通过
             if (fault == NoFault) {
-                Addr paddr = (pte.ppn << PageShift) | (vaddr & mask(getPageSizeLog2ByLevel(level)));
+                Addr paddr = (pte.ppn << PageShift) | (vaddr & mask(getPageShiftForLevel(level)));
 
 			//获取 senderState 中的 tc 和 translation
-				auto *mptState = dynamic_cast<MPTSenderState *>(req->senderState);
+				auto *mptState = dynamic_cast<MPTSenderState *>(req->getSenderState());
 				assert(mptState != nullptr);
 				
 				ThreadContext *tc = mptState->tc;
