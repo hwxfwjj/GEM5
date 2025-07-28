@@ -807,9 +807,14 @@ TLB::l2TLBEvictLRU(int l2TLBlevel, Addr vaddr)
     }
 }
 
+
+
+
+//JJW
+
 TlbEntry *
 TLB::lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
-            bool sign_used,uint8_t translateMode)
+            bool sign_used, uint8_t translateMode)
 {
     TlbEntry *entry = trie.lookup(buildKey(vpn, asid, translateMode));
 
@@ -817,6 +822,56 @@ TLB::lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
         if (entry)
             entry->lruSeq = nextSeq();
 
+        // 增加 ITLB 和 DTLB 的区分统计
+        if (mode == BaseMMU::Execute) {
+            // Instruction TLB 统计
+            stats.iTLBAccesses++;
+            if (!entry)
+                stats.iTLBMisses++;
+            else
+                stats.iTLBHits++;
+        }
+        else if (mode == BaseMMU::Write) {
+            // Data TLB 写
+            stats.writeAccesses++;
+            if (!entry)
+                stats.writeMisses++;
+            else
+                stats.writeHits++;
+        }
+        else {
+            // Data TLB 读
+            stats.readAccesses++;
+            if (!entry)
+                stats.readMisses++;
+            else
+                stats.readHits++;
+        }
+
+        if (entry) {
+            if (entry->isSquashed) {
+                if (mode == BaseMMU::Write)
+                    stats.writeHitsSquashed++;
+                else
+                    stats.readHitsSquashed++;
+            }
+        }
+
+
+        DPRINTF(TLBVerbose, "lookup(vpn=%#x, asid=%#x): %s ppn %#x\n",
+                vpn, asid, entry ? "hit" : "miss", entry ? entry->paddr : 0);
+    }
+
+    if (sign_used) {
+        if (entry) {
+            entry->used = true;
+        }
+    }
+
+    return entry;
+}
+
+/*原来的（增加 ITLB 和 DTLB 的区分统计之前的）：
         if (mode == BaseMMU::Write)
             stats.writeAccesses++;
         else
@@ -834,27 +889,12 @@ TLB::lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
             else
                 stats.readHits++;
         }
+*/
 
-        if (entry) {
-            if (entry->isSquashed) {
-                if (mode == BaseMMU::Write)
-                    stats.writeHitsSquashed++;
-                else
-                    stats.readHitsSquashed++;
-            }
-        }
 
-        DPRINTF(TLBVerbose, "lookup(vpn=%#x, asid=%#x): %s ppn %#x\n",
-                vpn, asid, entry ? "hit" : "miss", entry ? entry->paddr : 0);
-    }
-    if (sign_used) {
-        if (entry) {
-            entry->used = true;
-        }
-    }
 
-    return entry;
-}
+
+
 TlbEntry *
 TLB::lookupForwardPre(Addr vpn, uint64_t asid, bool hidden)
 {
@@ -1681,15 +1721,52 @@ TLB::L2TLBCheck(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode, Addr
                 }
             }
 
-        } else {
-            level--;
-            if (level < 0) {
-                hitInSp = true;
-                fault = L2TLBPagefault(vaddr, mode, req, isPre, is_back_pre);
-            } else {
-                hitInSp = false;
-            }
-        }
+            //JJW:
+                // 插入 MPT 权限检查。位置在所有其他 fault 检查通过之后。其他 fault 包括：
+                //checkPermissions(...) == NoFault
+                //大页合法性校验通过
+                // a、d 校验通过
+            if (fault == NoFault) {
+                Addr paddr = (pte.ppn << PageShift) | (vaddr & mask(getPageSizeLog2ByLevel(level)));
+
+			//获取 senderState 中的 tc 和 translation
+				auto *mptState = dynamic_cast<MPTSenderState *>(req->senderState);
+				assert(mptState != nullptr);
+				
+				ThreadContext *tc = mptState->tc;
+				BaseMMU::Translation *translation = mptState->translation;
+				
+				
+				//直接调用异步权限检查
+				checkMPTPermissionFunctionInTLBcc(
+					nullptr,  
+					vaddr,
+					paddr,
+					mode,
+					tc,
+					translation,
+					req
+				#if MPT_ENABLED
+					, globalMPT
+				#if MPT_CACHE_ENABLED
+					, globalMPTCache
+				#endif
+				#endif
+				);
+
+				// 不提前 return，统一风格：继续走向 return fault
+				fault = NoFault;
+
+			} else { //else对应的情况只是一个中间页表的指针页，不能直接转换出物理地址，不需要调用 checkPermissions(...)，不需要做 MPT 权限检查
+				level--;
+				if (level < 0) {
+					hitInSp = true;
+					fault = L2TLBPagefault(vaddr, mode, req, isPre, is_back_pre);
+				} else {
+					hitInSp = false;
+				}
+			}
+		}
     }
     DPRINTF(TLB, "tlb check final\n");
     if (fault == NoFault)
@@ -1702,6 +1779,8 @@ TLB::L2TLBCheck(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode, Addr
     }
     return fault;
 }
+
+
 bool
 TLB::checkPrePrecision(uint64_t &removeNoUsePre, uint64_t &usedPre)
 {
@@ -1818,12 +1897,83 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
             if (fault != NoFault) {
                 return std::make_pair(hit_type, fault);
             }
+            //JJW:
+			
+			
+			Addr paForMPTCheck = e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
+
+			checkMPTPermissionFunctionInTLBcc(
+				e[0], vaddr, paForMPTCheck, mode,
+				tc, translation, req
+			#if MPT_ENABLED
+				, globalMPT
+				#if MPT_CACHE_ENABLED
+					, globalMPTCache
+				#endif
+			#endif
+			);
+			
+			//异步检查 → 提前退出，结果交由 translation->finish() 处理
+			return std::make_pair(hit_type, NoFault);
+			
+			/*
+            else { // MPT check 的优先级是低于checkPermissionsd的
+                // 这里的逻辑是：如果checkPermissions通过了，才会去检查MPT权限
+                auto [mpt_result, mpt_fault] = checkMPTPermissionFunctionInTLBcc(
+                    e[0], vaddr,//这里的依据是if ((vpn == 0 || (vpn & mask) == (tlb[i].vaddr & mask)) && (asid == 0 || tlb[i].asid == asid)) remove(i);
+                    e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes)), //这里的依据是paddr = e_l2tlb->paddr << PageShift | (vaddr & mask(e_l2tlb->logBytes));
+                    mode
+                    #if MPT_ENABLED
+                        , globalMPT
+                        #if MPT_CACHE_ENABLED
+                            , globalMPTCache
+                        #endif
+                    #endif
+                );
+            
+                if (mpt_fault != NoFault) {
+                    return std::make_pair(hit_type, mpt_fault);  // MPT 不通过
+                }
+            } */
+
         }
         Addr fault_gpaddr = ((e[0]->gpaddr >> 12) << 12) | (vaddr & 0xfff);
 
         std::pair(continuePtw,fault) = checkGPermissions(status,vaddr,fault_gpaddr,mode,e[0]->pte,req->get_h_inst());
         if (fault != NoFault) {
             return std::make_pair(hit_type, fault);
+        }
+        //JJW:
+        else {
+            Addr paForMPTCheck = e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
+            
+			checkMPTPermissionFunctionInTLBcc(
+				e[0], vaddr, paForMPTCheck, mode,
+				tc, translation, req
+			#if MPT_ENABLED
+				, globalMPT
+				#if MPT_CACHE_ENABLED
+					, globalMPTCache
+				#endif
+			#endif
+			);
+
+			//当前函数挂起，等 finish 回调
+			return std::make_pair(hit_type, NoFault);
+			/*
+			auto [mpt_result, mpt_fault] = checkMPTPermissionFunctionInTLBcc(
+                e[0], vaddr, paForMPTCheck, mode
+                #if MPT_ENABLED
+                        , globalMPT
+                        #if MPT_CACHE_ENABLED
+                            , globalMPTCache
+                        #endif
+                #endif
+            );
+                
+            if (mpt_fault != NoFault) {
+                return std::make_pair(hit_type, mpt_fault);
+            }*/
         }
 
         Addr paddr = e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
@@ -1860,6 +2010,41 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
                 if (fault != NoFault) {
                     return std::make_pair(hit_type, fault);
                 }
+                //JJW:
+                else {
+                    //MPT 权限检查
+                    Addr paForMPTCheck = e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
+            
+					checkMPTPermissionFunctionInTLBcc(
+						e[0], vaddr, paForMPTCheck, mode,
+						tc, translation, req
+					#if MPT_ENABLED
+						, globalMPT
+						#if MPT_CACHE_ENABLED
+							, globalMPTCache
+						#endif
+					#endif
+					);
+
+					//当前函数退出，等待 finish 异步恢复
+					return std::make_pair(hit_type, NoFault);
+					
+					
+					/*
+                    auto [mpt_result, mpt_fault] = checkMPTPermissionFunctionInTLBcc(
+                        e[0], vaddr, paForMPTCheck, mode
+                        #if MPT_ENABLED
+                            , globalMPT
+                            #if MPT_CACHE_ENABLED
+                                , globalMPTCache
+                            #endif
+                        #endif
+                    );
+            
+                    if (mpt_fault != NoFault) {
+                        return std::make_pair(hit_type, mpt_fault);
+                    } */
+                }
             }
             req->setPaddr(gPaddr);
             ppn = e[0]->pte.ppn;
@@ -1881,6 +2066,45 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
 
                 if (fault != NoFault) {
                     return std::make_pair(hit_type, fault);
+                }
+                //JJW:
+                else {
+                    // MPT 权限检查
+                    Addr paForMPTCheck = e[0]->paddr << PageShift | (gPaddr & mask(e[0]->logBytes));
+                    
+					checkMPTPermissionFunctionInTLBcc(
+						e[0], vaddr, paForMPTCheck, mode,
+						tc, translation, req
+					#if MPT_ENABLED
+						, globalMPT
+						#if MPT_CACHE_ENABLED
+							, globalMPTCache
+						#endif
+					#endif
+					);
+
+					//当前翻译挂起，等待 translation->finish() 恢复
+					return std::make_pair(hit_type, NoFault);
+					
+					
+					
+					/*
+					
+					auto [mpt_result, mpt_fault] = checkMPTPermissionFunctionInTLBcc(
+                        e[0], vaddr, paForMPTCheck, mode
+                        #if MPT_ENABLED
+                            , globalMPT
+                            #if MPT_CACHE_ENABLED
+                                , globalMPTCache
+                            #endif
+                        #endif
+                    );
+                
+                    if (mpt_fault != NoFault) {
+                        return std::make_pair(hit_type, mpt_fault);
+                    } */
+					
+					
                 }
 
 
@@ -1970,6 +2194,42 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                 return std::make_pair(hit_type, fault);
             } else {
                 hit_type = h_l2GstageHitEnd;
+
+                //JJW:
+                // 插入 MPT 权限检查
+                Addr paForMPTCheck = e[0]->paddr << PageShift | (gPaddr & mask(e[0]->logBytes));
+                
+				checkMPTPermissionFunctionInTLBcc(
+					e[0], vaddr, paForMPTCheck, mode,
+					tc, translation, req
+				#if MPT_ENABLED
+					, globalMPT
+					#if MPT_CACHE_ENABLED
+						, globalMPTCache
+					#endif
+				#endif
+				);
+
+
+				return std::make_pair(hit_type, NoFault);
+				
+				/*
+				auto [mpt_result, mpt_fault] = checkMPTPermissionFunctionInTLBcc(
+                        e[0], vaddr, paForMPTCheck, mode
+                        #if MPT_ENABLED
+                            , globalMPT
+                            #if MPT_CACHE_ENABLED
+                                , globalMPTCache
+                            #endif
+                        #endif
+                );
+
+                if (mpt_fault != NoFault) {
+                    return std::make_pair(hit_type, mpt_fault);
+                }*/
+
+                //:JJW
+
                 if (e[0]->level > 0) {
                     pg_mask = (1ULL << (12 + 9 * e[0]->level)) - 1;
                     pgBase = ((e[0]->pte.ppn << 12) & ~pg_mask) | (gPaddr & pg_mask & ~PGMASK);
@@ -2056,9 +2316,50 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                         req->setTwoPtwWalk(true, level, twoStageLevel--, e[0]->pte.ppn, hitInSp);
                         req->setgPaddr(gPaddr);
                         return std::make_pair(hit_type, fault);
+                    //这个分支确实不需要MPT权限检查，MPT 依据的物理地址 paForMPTCheck 还未确定
                     } else {
                         hit_type = h_l2GstageHitEnd;
+
                         uint64_t gpaddr_past = gPaddr;
+
+
+                        //JJW:
+                        //插入 MPT 权限检查
+                        Addr paForMPTCheck = e[0]->paddr << PageShift | (gPaddr & mask(e[0]->logBytes));
+                        
+						checkMPTPermissionFunctionInTLBcc(
+							e[0], vaddr, paForMPTCheck, mode,
+							tc, translation, req
+						#if MPT_ENABLED
+							, globalMPT
+							#if MPT_CACHE_ENABLED
+								, globalMPTCache
+							#endif
+						#endif
+						);
+
+
+						return std::make_pair(hit_type, NoFault);
+						
+						/*
+						auto [mpt_result, mpt_fault] = checkMPTPermissionFunctionInTLBcc(
+                                e[0], vaddr, paForMPTCheck, mode
+                                #if MPT_ENABLED
+                                    , globalMPT
+                                    #if MPT_CACHE_ENABLED
+                                        , globalMPTCache
+                                    #endif
+                                #endif
+                            );
+
+                        if (mpt_fault != NoFault) {
+                            return std::make_pair(hit_type, mpt_fault);
+                        } */
+                        //:JJW
+
+
+
+
                         if (finishgva) {
                             if (e[0]->level > 0) {
                                 pg_mask = (1ULL << (12 + 9 * e[0]->level)) - 1;
@@ -2401,6 +2702,41 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
         DPRINTF(TLB, "translate(vpn=%#x, asid=%#x): %#x pc %#x mode %i pte.d %\n", vaddr, satp.asid, paddr,
                 req->getPC(), mode, e[0]->pte.d);
         fault = checkPermissions(status, pmode, vaddr, mode, e[0]->pte, 0, false);
+
+        //JJW:
+        // 追加 MPT 权限检查
+        if (fault == NoFault) {
+            Addr paForMPTCheck = (e[0]->paddr << PageShift) | (vaddr & mask(e[0]->logBytes));
+            
+			 checkMPTPermissionFunctionInTLBcc(
+				e[0], vaddr, paForMPTCheck, mode,
+				tc, translation, req
+			#if MPT_ENABLED
+				, globalMPT
+				#if MPT_CACHE_ENABLED
+					, globalMPTCache
+				#endif
+			#endif
+			);
+
+			return NoFault;  
+			
+			/*
+			auto [mpt_result, mpt_fault] = checkMPTPermissionFunctionInTLBcc(
+                    e[0], vaddr, paForMPTCheck, mode
+                    #if MPT_ENABLED
+                        , globalMPT
+                        #if MPT_CACHE_ENABLED
+                            , globalMPTCache
+                        #endif
+                    #endif
+                );
+            if (mpt_fault != NoFault) {
+                return mpt_fault;
+            }*/
+        }
+        //:JJW
+
     }
 
 
@@ -2637,6 +2973,9 @@ TLB::translateTiming(const RequestPtr &req, ThreadContext *tc,
 {
     bool delayed;
     assert(translation);
+
+    req->setSenderState(new MPTSenderState(tc, translation));//JJW
+
     Fault fault = translate(req, tc, translation, mode, delayed);
     if (!delayed){
         translation->finish(fault, req, tc, mode);
@@ -2887,7 +3226,72 @@ TLB::TlbStats::TlbStats(statistics::Group *parent)
                "Total TLB (read and write) misses", readMisses + writeMisses),
       ADD_STAT(accesses, statistics::units::Count::get(),
                "Total TLB (read and write) accesses",
-               readAccesses + writeAccesses)
+               readAccesses + writeAccesses),
+			   
+			   //JJW
+      ADD_STAT(mptL0Hits, statistics::units::Count::get(), "MPT L0 hits"),
+      ADD_STAT(mptL0Misses, statistics::units::Count::get(), "MPT L0 misses"),
+      ADD_STAT(mptL0Accesses, statistics::units::Count::get(), "MPT L0 accesses", mptL0Hits + mptL0Misses),
+      ADD_STAT(mptL0HitRate, statistics::units::Ratio::get(), "MPT L0 hit rate", mptL0Hits / mptL0Accesses),
+      ADD_STAT(mptL0MissRate, statistics::units::Ratio::get(), "MPT L0 miss rate", mptL0Misses / mptL0Accesses),
+
+      ADD_STAT(mptL1Hits, statistics::units::Count::get(), "MPT L1 hits"),
+      ADD_STAT(mptL1Misses, statistics::units::Count::get(), "MPT L1 misses"),
+      ADD_STAT(mptL1Accesses, statistics::units::Count::get(), "MPT L1 accesses", mptL1Hits + mptL1Misses),
+      ADD_STAT(mptL1HitRate, statistics::units::Ratio::get(), "MPT L1 hit rate", mptL1Hits / mptL1Accesses),
+      ADD_STAT(mptL1MissRate, statistics::units::Ratio::get(), "MPT L1 miss rate", mptL1Misses / mptL1Accesses),
+
+      ADD_STAT(mptL2Hits, statistics::units::Count::get(), "MPT L2 hits"),
+      ADD_STAT(mptL2Misses, statistics::units::Count::get(), "MPT L2 misses"),
+      ADD_STAT(mptL2Accesses, statistics::units::Count::get(), "MPT L2 accesses", mptL2Hits + mptL2Misses),
+      ADD_STAT(mptL2HitRate, statistics::units::Ratio::get(), "MPT L2 hit rate", mptL2Hits / mptL2Accesses),
+      ADD_STAT(mptL2MissRate, statistics::units::Ratio::get(), "MPT L2 miss rate", mptL2Misses / mptL2Accesses),
+
+      ADD_STAT(mptL3Hits, statistics::units::Count::get(), "MPT L3 hits"),
+      ADD_STAT(mptL3Misses, statistics::units::Count::get(), "MPT L3 misses"),
+      ADD_STAT(mptL3Accesses, statistics::units::Count::get(), "MPT L3 accesses", mptL3Hits + mptL3Misses),
+      ADD_STAT(mptL3HitRate, statistics::units::Ratio::get(), "MPT L3 hit rate", mptL3Hits / mptL3Accesses),
+      ADD_STAT(mptL3MissRate, statistics::units::Ratio::get(), "MPT L3 miss rate", mptL3Misses / mptL3Accesses),
+
+      ADD_STAT(mptSPHits, statistics::units::Count::get(), "MPT SuperPage hits"),
+      ADD_STAT(mptSPMisses, statistics::units::Count::get(), "MPT SuperPage misses"),
+      ADD_STAT(mptSPAccesses, statistics::units::Count::get(), "MPT SuperPage accesses", mptSPHits + mptSPMisses),
+      ADD_STAT(mptSPHitRate, statistics::units::Ratio::get(), "MPT SuperPage hit rate", mptSPHits / mptSPAccesses),
+      ADD_STAT(mptSPMissRate, statistics::units::Ratio::get(), "MPT SuperPage miss rate", mptSPMisses / mptSPAccesses),
+
+      ADD_STAT(mptTotalHits, statistics::units::Count::get(), "Total MPT hits",
+               mptL0Hits + mptL1Hits + mptL2Hits + mptL3Hits + mptSPHits),
+      ADD_STAT(mptTotalMisses, statistics::units::Count::get(), "Total MPT misses",
+               mptL0Misses + mptL1Misses + mptL2Misses + mptL3Misses + mptSPMisses),
+      ADD_STAT(mptTotalAccesses, statistics::units::Count::get(), "Total MPT accesses",
+               mptTotalHits + mptTotalMisses),
+      ADD_STAT(mptHitRate, statistics::units::Ratio::get(), "MPT hit rate",
+               mptTotalHits / mptTotalAccesses),
+      ADD_STAT(mptMissRate, statistics::units::Ratio::get(), "MPT miss rate",
+               mptTotalMisses / mptTotalAccesses)
+
+	   
+		//todo: I/D tlb miss/hit  -->mpt miss/hit	   为了计算总latency
+			   
+		ADD_STAT(iTLBMisses, statistics::units::Count::get(), "Instruction TLB misses"),
+		ADD_STAT(iTLBHits, statistics::units::Count::get(), "Instruction TLB hits"),
+		ADD_STAT(iTLBAccesses, statistics::units::Count::get(), "Instruction TLB accesses",
+				 iTLBHits + iTLBMisses),
+		ADD_STAT(iTLBMissRate, statistics::units::Ratio::get(), "Instruction TLB miss rate",
+				 iTLBMisses / iTLBAccesses),
+	   
+		ADD_STAT(dTLBHits, statistics::units::Count::get(), "Data TLB hits",
+         readHits + writeHits);
+ADD_STAT(dTLBMisses, statistics::units::Count::get(), "Data TLB misses",
+         readMisses + writeMisses);
+ADD_STAT(dTLBAccesses, statistics::units::Count::get(), "Data TLB accesses",
+         readAccesses + writeAccesses);
+ADD_STAT(dTLBMissRate, statistics::units::Ratio::get(), "Data TLB miss rate",
+         dTLBMisses / dTLBAccesses);
+	   
+			   
+			   
+			   
 {
     l2tlbRemove
         .init(5)
@@ -2900,10 +3304,329 @@ TLB::TlbStats::TlbStats(statistics::Group *parent)
         .flags(gem5::statistics::total);
 }
 
+
+//JJW
+void TLB::regStats()
+{
+    BaseTLB::regStats();  // 调用父类的统计注册逻辑
+
+    // 绑定 MPT 多级统计数据到 globalMPTCache（必须是指针）
+    stats.mptL0Hits.dataPtr(&globalMPTCache->mptCacheL0Hits);
+    stats.mptL0Misses.dataPtr(&globalMPTCache->mptCacheL0Misses);
+
+    stats.mptL1Hits.dataPtr(&globalMPTCache->mptCacheL1Hits);
+    stats.mptL1Misses.dataPtr(&globalMPTCache->mptCacheL1Misses);
+
+    stats.mptL2Hits.dataPtr(&globalMPTCache->mptCacheL2Hits);
+    stats.mptL2Misses.dataPtr(&globalMPTCache->mptCacheL2Misses);
+
+    stats.mptL3Hits.dataPtr(&globalMPTCache->mptCacheL3Hits);
+    stats.mptL3Misses.dataPtr(&globalMPTCache->mptCacheL3Misses);
+
+    stats.mptSPHits.dataPtr(&globalMPTCache->mptCacheSPHits);
+    stats.mptSPMisses.dataPtr(&globalMPTCache->mptCacheSPMisses);
+}
+
+
+
+
+
+
+
+
+
 Port *
 TLB::getTableWalkerPort()
 {
     return &walker->getPort("port");
 }
+
+
+
+
+
+//JJW
+
+
+#if MPT_ENABLED
+inline int getLevelForPageSizeLog2(uint8_t logBytes) {
+    switch (logBytes) {
+        case 12: return 0; // 4KB
+        case 21: return 1; // 2MB
+        case 30: return 2; // 1GB
+        case 39: return 3; // 512GB
+        default: return -1;
+    }
+}
+#endif
+
+
+/*
+ 检查某个 TLB entry 对应的 MPT 权限是否允许当前操作。
+ 优先使用 entry 自带的 mptInfo。若不可信，访问 MPTCache 获取真实权限
+ 填回 tlbEntry.mptInfo，但不再重复 trust
+ int用于记录结果的类型（0表示没有fault，直接击中mptinfoInTLB，
+ 1表示没有fault但是mptinfoInTLB的trust没有满足，去mptcache或mpt中找到了，
+ 2 reserved
+ 3mpt中也没有找到，寻找失败  
+ 4表示level<0是无效页大小
+ 5 mpt机制没有打开
+ */
+
+
+//std::pair<int, Fault>
+void
+checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMPTCheck, BaseMMU::Mode mode,
+    ThreadContext *tc,
+    Translation *translation,
+    RequestPtr req
+ #if MPT_ENABLED
+     , const MPT& mpt
+   #if MPT_CACHE_ENABLED
+     , MPTCache52* cache
+   #endif
+ #endif
+ )   
+{
+#if !MPT_ENABLED
+
+    // 情况 1：MPT 完全禁用，视为永远允许访问
+    //return {5, NoFault};
+	translation->finish(NoFault, req, tc, mode);
+    return;
+
+#elif MPT_ENABLED && MPT_CACHE_ENABLED
+
+    // 情况 2：启用 MPT + Cache（默认路径）
+    const MPTInfoInTLB& mptInfo = entry->mptInfo;
+    const uint8_t tlbLogBytes = entry->logBytes;
+
+    // Case 0: MPTInfo 在 TLB 中是可信的
+    if (mptInfo.mptinfoTrust(tlbLogBytes)) {
+        bool hasPerm = false;
+        switch (mode) {
+            case BaseMMU::Read:    hasPerm = mptInfo.perm_r; break;
+            case BaseMMU::Write:   hasPerm = mptInfo.perm_w; break;
+            case BaseMMU::Execute: hasPerm = mptInfo.perm_x; break;
+            default: break;
+        }
+		/*
+        if (hasPerm)
+            return {0, NoFault};
+        else
+            return {0, createMPTPagefault(vaddr, paForMPTCheck, mode)};
+		*/
+        Fault fault = hasPerm ? NoFault : createMPTPagefault(vaddr, paForMPTCheck, mode);
+        translation->finish(fault, req, tc, mode);
+        return;		
+			
+    }
+
+    // Case 1: 不可信，推导 MPT 层级
+    int level = getLevelForPageSizeLog2(tlbLogBytes);
+    if (level < 0) {
+        //return {4, createMPTPagefault(vaddr, paForMPTCheck, mode)}; // 无效页大小
+        DPRINTF(TLB, "Invalid page size → [path=4] vaddr=%#lx\n", vaddr);
+        translation->finish(createMPTPagefault(vaddr, paForMPTCheck, mode), req, tc, mode);
+        return;		
+    }
+
+    // Case 2: 查找 MPTCache。异步 fetch，命中/未命中都延迟
+	
+    MPTCacheEntry cacheEntry;
+	
+	cache->fetchDelayed(paForMPTCheck, level, globalMPT, tc, pma, pmp
+        [=](bool hit, MPTCacheEntry cacheEntry) {
+            if (!cacheEntry.valid) {
+                DPRINTF(TLB, "MPTCache fetch failed → [path=3] vaddr=%#lx\n", vaddr);
+                translation->finish(createMPTPagefault(vaddr, paForMPTCheck, mode), req, tc, mode);
+                return;
+            }
+	
+			/*
+			if (!globalMPTCache->fetch(paForMPTCheck, level, globalMPT, cacheEntry)) { 
+			//if (!globalMPTCache.fetch(paForMPTCheck, level, globalMPT, cacheEntry)) {  //fetch 参数中的&entry是调用者传入的空壳对象，由函数内部填充内容返回出去。先MPTCacheEntry cacheEntry; 声明一个临时变量,fetch()内部会自动填写它
+				//这个填进去的的临时变量，用来：提取 mpte.perms()；生成 offset；更新 TLBEntry::mptInfo 等
+				return {3, createMPTPagefault(vaddr, paForMPTCheck, mode)}; // cache 和 walk 都失败
+			}*/
+
+			
+			// Case 3: 成功，计算 offset 和权限；回填 TLB 的 mptInfo；提取权限
+			Addr offset = paForMPTCheck - cacheEntry.tag;
+			uint64_t regionSizeAfterN = getRegionSizeForLevel(level);
+			if (cacheEntry.mpte.getN()) {
+				regionSizeAfterN *= 512;  // napot 模式，粒度放大
+			}
+			uint8_t log2RegionSize = log2floor(regionSizeAfterN);
+			
+			// 构造虚拟 cache entry 供 fromEntry 使用
+			MPTCacheEntry fakeEntry = {
+				.tag = regionAlign(paForMPTCheck, level),
+				.mpte = mpte,
+				.valid = true,
+				.level = level,
+				.log2RegionSize = log2RegionSize
+			};
+			entry->mptInfo = MPTInfoInTLB::fromEntry(fakeEntry, offset);
+
+
+			uint8_t pi = (offset >> getPageShiftForLevel(level)) & 0xF;
+			uint8_t perm = cacheEntry.mpte.perms(pi); //// 这个就够了，内部已自动处理 napot
+			bool hasPerm = false;
+
+			switch (mode) {
+				case BaseMMU::Read:    hasPerm = perm & MPT_PERM_R; break;
+				case BaseMMU::Write:   hasPerm = perm & MPT_PERM_W; break;
+				case BaseMMU::Execute: hasPerm = perm & MPT_PERM_X; break;
+				default: break;
+			}
+		/*
+			if (hasPerm)
+				return {1, NoFault};
+			else
+				return {1, createMPTPagefault(vaddr, paForMPTCheck, mode)};
+		*/
+			Fault fault = hasPerm ? NoFault : createMPTPagefault(vaddr, paForMPTCheck, mode);
+			translation->finish(fault, req, tc, mode);
+        }
+    );
+
+#elif MPT_ENABLED && !MPT_CACHE_ENABLED
+
+    // 情况 3：启用 MPT，但禁用 Cache，直接 walk
+    const MPTInfoInTLB& mptInfo = entry->mptInfo;
+    const uint8_t tlbLogBytes = entry->logBytes;
+
+    // Case 0: TLB 中已有可信 MPT 信息
+    if (mptInfo.mptinfoTrust(tlbLogBytes)) {
+        bool hasPerm = false;
+        switch (mode) {
+            case BaseMMU::Read:    hasPerm = mptInfo.perm_r; break;
+            case BaseMMU::Write:   hasPerm = mptInfo.perm_w; break;
+            case BaseMMU::Execute: hasPerm = mptInfo.perm_x; break;
+            default: break;
+        }
+        /*
+		if (hasPerm)
+            return {0, NoFault};
+        else
+            return {0, createMPTPagefault(vaddr, paForMPTCheck, mode)};
+		*/
+		Fault fault = hasPerm ? NoFault : createMPTPagefault(vaddr, paForMPTCheck, mode);
+        translation->finish(fault, req, tc, mode);
+        return;
+		
+    }
+
+    // Case 1。推导页粒度
+    int level = getLevelForPageSizeLog2(tlbLogBytes);
+    if (level < 0){
+        //return {4, createMPTPagefault(vaddr, paForMPTCheck, mode)};
+	    DPRINTF(TLB, "MPT walk invalid page size → [path=4] vaddr=%#lx\n", vaddr);
+        translation->finish(createMPTPagefault(vaddr, paForMPTCheck, mode), req, tc, mode);
+        return;
+	}
+	
+	
+	
+    // Case 2。在这里手动 walk 并构造 MPTInfoInTLB，
+    //MPTE52 mpte = globalMPT.walk(paForMPTCheck);
+	mpt.walkDelayed(paForMPTCheck, tc, pma, pmp,[=](MPTE52 mpte) {
+		if (!mpte.isValid()) {
+			//return {3, createMPTPagefault(vaddr, paForMPTCheck, mode)};
+			DPRINTF(TLB, "MPT walk result invalid → [path=3] vaddr=%#lx\n", vaddr);
+			translation->finish(createMPTPagefault(vaddr, paForMPTCheck, mode), req, tc, mode);
+			return;
+			}
+		
+		// regionBase 不需要乘系数，仅对齐
+		Addr regionBase = paForMPTCheck  & ~(getRegionSizeForLevel(level) - 1);
+		Addr offset = paForMPTCheck  - regionBase;
+
+		//perms(pi) 已封装了N的判断逻辑
+		uint8_t pi = (offset >> getPageShiftForLevel(level)) & 0xF;
+		uint8_t perm = mpte.perms(pi);
+
+		//napot 模式下权限粒度扩大，需乘以 512
+		uint64_t regionSizeAfterrN = getRegionSizeForLevel(level);
+		if (mpte.getN()) {
+			regionSizeAfterrN *= 512;
+		}
+		uint8_t log2RegionSize = log2floor(regionSizeAfterrN);
+		
+		//回填 mptInfo//这段逻辑是在 127 cycle 之后被 schedule 执行	
+		entry->mptInfo.raw = 0;
+		entry->mptInfo.raw.valid(1);
+		entry->mptInfo.raw.perm_r((perm & MPT_PERM_R) != 0);
+		entry->mptInfo.raw.perm_w((perm & MPT_PERM_W) != 0);
+		entry->mptInfo.raw.perm_x((perm & MPT_PERM_X) != 0);
+		entry->mptInfo.raw.napot(mpte.getN());  // 显式标记 napot
+		entry->mptInfo.raw.mptLogBytes(log2RegionSize);
+
+		// 权限判断
+		bool hasPerm = false;
+		switch (mode) {
+			case BaseMMU::Read:    hasPerm = perm & MPT_PERM_R; break;
+			case BaseMMU::Write:   hasPerm = perm & MPT_PERM_W; break;
+			case BaseMMU::Execute: hasPerm = perm & MPT_PERM_X; break;
+			default: break;
+		}
+
+		/*
+		if (hasPerm)
+			return {2, NoFault};
+		else
+			return {2, createMPTPagefault(vaddr, paForMPTCheck, mode)};
+		*/
+
+		Fault fault = hasPerm ? NoFault : createMPTPagefault(vaddr, paForMPTCheck, mode);
+		translation->finish(fault, req, tc, mode);
+	});
+	
+	
+
+	
+	
+	
+
+    // 提前 return（等待 finish 回调）
+    return;
+	
+	
+	
+
+#endif
+}
+
+
+//JJW  //JJW2
+
+#if MPT_ENABLED
+Fault createMPTPagefault(Addr vaddr, Addr paForMPTCheck, BaseMMU::Mode mode)
+{
+    ExceptionCode code;
+    switch (mode) {
+        case BaseMMU::Read:
+            code = ExceptionCode::LOAD_MPT_PAGE;
+            break;
+        case BaseMMU::Write:
+            code = ExceptionCode::STORE_MPT_PAGE;
+            break;
+        case BaseMMU::Execute:
+            code = ExceptionCode::INST_MPT_PAGE;
+            break;
+        default:
+            panic("Unsupported memory mode for MPT page fault");
+    }
+
+    DPRINTF(TLB, "Create MPT page fault #%i on vaddr=%#lx paForMPTCheck=%#lx\n",
+            code, vaddr, paForMPTCheck);
+
+    return std::make_shared<AddressFault>(vaddr, paForMPTCheck, code);
+}
+#endif
+
+
+
 
 } // namespace gem5
