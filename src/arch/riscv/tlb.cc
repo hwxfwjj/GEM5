@@ -236,7 +236,8 @@ void MPT::walkDelayed(Addr vaddr,
     int accessCounter = 0;
     MPTE52 result = walk(vaddr, tc, pma, pmp, accessCounter); // 使用同步接口立即生成结果（只模拟“等这么久才交结果”）
 
-    Tick delay = accessCounter  * 127 * SimClock::Int::ns(); // 模拟127 cycle
+    //Tick delay = accessCounter  * 127 * SimClock::Int::ns(); // 模拟127 cycle
+    Tick delay = accessCounter  * 127 * SimClock::as_int::ns; 
 
     // 延迟调用 callback，让请求等127个周期才拿到结果
     tc->getCpuPtr()->schedule(
@@ -429,7 +430,8 @@ void MPTCache52::fetchDelayed(
 
     if (it != table.end() && it->second.valid) {
         // 命中：直接 10 cycle 延迟
-        Tick delay = 10 * SimClock::Int::ns();
+        //Tick delay = 10 * SimClock::Int::ns();    
+        Tick delay = 10 * SimClock::as_int::ns;
         MPTCacheEntry entry = it->second;
 
 //PLRU 更新
