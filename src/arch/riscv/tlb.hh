@@ -132,19 +132,6 @@ struct MPT {
 #endif //MPT_ENABLED
 
 
-
-	#if MPT_ENABLED
-	extern gem5::RiscvISA::MPT globalMPT;//globalMPT/mptcache是在mmu_mpt_and_mptcache-Smmpt52.cc中创建的。
-	//相应地，在tlb.cc中定义的TLB类构造函数中，也不包括mpt mptcache的初始化。
-	  #if MPT_CACHE_ENABLED
-	  //extern MPTCache52 globalMPTCache;
-	  extern gem5::RiscvISA::MPTCache52* globalMPTCache;
-	  #endif
-
-	#endif
-
-
-  
 #if MPT_CACHE_ENABLED
 
 class MPTCache52 {
@@ -242,6 +229,22 @@ class MPTCache52 {
 };
 #endif //MPT_CACHE_ENABLED
 
+
+
+
+	#if MPT_ENABLED
+	extern gem5::RiscvISA::MPT globalMPT;//globalMPT/mptcache是在mmu_mpt_and_mptcache-Smmpt52.cc中创建的。
+	//相应地，在tlb.cc中定义的TLB类构造函数中，也不包括mpt mptcache的初始化。
+	  #if MPT_CACHE_ENABLED
+	  //extern MPTCache52 globalMPTCache;
+	  extern gem5::RiscvISA::MPTCache52* globalMPTCache;
+	  #endif
+
+	#endif
+
+
+  
+  
 
 class Walker;
 
