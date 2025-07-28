@@ -483,12 +483,12 @@ void MPTCache52::fetchDelayed(
 
 
         // 统计命中
-        //++globalMPT->mptCacheL1Misses;
-        if (level == 0) ++globalMPT->mptCacheL0Hits;
-        else if (level == 1) ++globalMPT->mptCacheL1Hits;
-        else if (level == 2) ++globalMPT->mptCacheL2Hits;
-        else if (level == 3) ++globalMPT->mptCacheL3Hits;
-        else ++globalMPT->mptCacheSPHits;
+        //++globalMPTCache->mptCacheL1Misses;
+        if (level == 0) ++globalMPTCache->mptCacheL0Hits;
+        else if (level == 1) ++globalMPTCache->mptCacheL1Hits;
+        else if (level == 2) ++globalMPTCache->mptCacheL2Hits;
+        else if (level == 3) ++globalMPTCache->mptCacheL3Hits;
+        else ++globalMPTCache->mptCacheSPHits;
 
         // 异步回调：延迟 10 cycle 执行 callback(true, entry)    
         curEventQueue()->schedule(
@@ -563,11 +563,11 @@ void MPTCache52::fetchDelayed(
                 table_mut[aligned] = entry;
 
                 // 统计未命中
-                if (level == 0) ++globalMPT->mptCacheL0Misses;
-                else if (level == 1) ++globalMPT->mptCacheL1Misses;
-                else if (level == 2) ++globalMPT->mptCacheL2Misses;
-                else if (level == 3) ++globalMPT->mptCacheL3Misses;
-                else ++globalMPT->mptCacheSPMisses;
+                if (level == 0) ++globalMPTCache->mptCacheL0Misses;
+                else if (level == 1) ++globalMPTCache->mptCacheL1Misses;
+                else if (level == 2) ++globalMPTCache->mptCacheL2Misses;
+                else if (level == 3) ++globalMPTCache->mptCacheL3Misses;
+                else ++globalMPTCache->mptCacheSPMisses;
 
                 callback(false, entry);
             }
