@@ -63,6 +63,10 @@
 #endif
 
 
+#ifndef MPT_CACHE_SIZE
+#define MPT_CACHE_SIZE 128    //MPT_CACHE_SIZE 默认为128. 需要在编译时自定义！
+#endif
+
 
 namespace gem5
 {
@@ -80,10 +84,7 @@ inline int getPageShiftForLevel(int level){ // 返回每个层级的页大小对
     }
 }
 
-uint64_t getPageSizeForLevel(int level);
-uint64_t getRegionSizeForLevel(int level);
-uint8_t log2floor(uint64_t x);
-bool checkMPTEPermissions(const MPTE52 &mpte, BaseMMU::Mode mode, Addr range_offset, int level);
+
 
 //MPT Information
 BitUnion32(MPTInfoRaw)
@@ -153,6 +154,12 @@ struct MPTE52
     // 获取第 pi 个页的权限（pi ∈ [0, 15]）
     uint8_t perms(uint8_t pi) const;
 };
+
+uint64_t getPageSizeForLevel(int level);
+uint64_t getRegionSizeForLevel(int level);
+uint8_t log2floor(uint64_t x);
+bool checkMPTEPermissions(const MPTE52 &mpte, BaseMMU::Mode mode, Addr range_offset, int level);
+
 #endif //MPT_ENABLED
 
 #if MPT_CACHE_ENABLED

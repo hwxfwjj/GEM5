@@ -83,6 +83,10 @@
 #endif
 
 
+#ifndef MPT_CACHE_SIZE
+#define MPT_CACHE_SIZE 128    //MPT_CACHE_SIZE 默认为128. 需要在编译时自定义！
+#endif
+
 namespace gem5
 {
 
