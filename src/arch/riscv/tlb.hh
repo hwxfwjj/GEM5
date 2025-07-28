@@ -56,6 +56,33 @@
 #include "params/RiscvTLB.hh"
 #include "sim/sim_object.hh"
 
+
+
+
+// 是否启用 MPT（默认启用，使用 -D__ARCH_RISCV_MMU_MPT_HH__ 禁用）	
+//#ifndef __ARCH_RISCV_MMU_MPT_HH__
+#ifndef MPT_ENABLED
+#define MPT_ENABLED 1
+#endif
+//#include "sim/stat_control.hh" 
+//#else
+//#define MPT_ENABLED 0
+//#endif
+
+// 是否启用 MPT Cache（默认启用，使用 -D__ARCH_RISCV_MMU_MPT_CACHE_HH__ 禁用），前提是 MPT 启用																													
+//#if MPT_ENABLED && !defined(__ARCH_RISCV_MMU_MPT_CACHE_HH__)
+#define MPT_CACHE_ENABLED 1
+//#include "params/RiscvTLB.hh" //JJW2
+//#else
+//#define MPT_CACHE_ENABLED 0
+//#endif
+
+
+#ifndef MPT_SIMULATE_N_BIT
+#define MPT_SIMULATE_N_BIT 0
+#endif
+
+
 namespace gem5
 {
 
