@@ -409,7 +409,8 @@ const PLRUTreeN& MPTCache52::getPLRUByLevel(int level) const {
 
 // 用指针延迟构造 globalMPTCache
 // tlb.cc中都得改成箭头->(而不是.)来使用globalMPTCache 了
-MPTCache52* globalMPTCache = nullptr;
+//MPTCache52* globalMPTCache = nullptr;
+gem5::RiscvISA::MPTCache52* gem5::RiscvISA::globalMPTCache = nullptr;
 
 // 在 SimObject 初始化时调用，完成构造
 void MPTCache52::initMPTCacheFromParams(const RiscvTLBParams *params)
