@@ -37,12 +37,39 @@
 #include "base/types.hh"
 #include "sim/serialize.hh"
 
+#include "arch/riscv/mmu.hh"
+#include "arch/generic/mmu.hh"
+// 是否启用 MPT（默认启用，使用 -D__ARCH_RISCV_MMU_MPT_HH__ 禁用）	
+//#ifndef __ARCH_RISCV_MMU_MPT_HH__
+#ifndef MPT_ENABLED
+#define MPT_ENABLED 1
+#endif
+//#include "sim/stat_control.hh" 
+//#else
+//#define MPT_ENABLED 0
+//#endif
+
+// 是否启用 MPT Cache（默认启用，使用 -D__ARCH_RISCV_MMU_MPT_CACHE_HH__ 禁用），前提是 MPT 启用																													
+//#if MPT_ENABLED && !defined(__ARCH_RISCV_MMU_MPT_CACHE_HH__)
+#define MPT_CACHE_ENABLED 1
+//#include "params/RiscvTLB.hh" //JJW2
+//#else
+//#define MPT_CACHE_ENABLED 0
+//#endif
+
+
+#ifndef MPT_SIMULATE_N_BIT
+#define MPT_SIMULATE_N_BIT 0
+#endif
+
+
+
 namespace gem5
 {
 
 namespace RiscvISA {
 
-
+#if MPT_ENABLED 
 inline int getPageShiftForLevel(int level){ // 返回每个层级的页大小对应的 log2 值
     switch (level) {
         case 0: return 12; // log2(4KB)
@@ -69,6 +96,14 @@ BitUnion32(MPTInfoRaw)
     Bitfield<0>        valid;
 EndBitUnion(MPTInfoRaw);
 
+
+
+
+#endif //MPT_ENABLED
+
+
+
+#if MPT_ENABLED 
 // -----------------------------
 // MPT 权限位定义
 // -----------------------------
@@ -118,9 +153,9 @@ struct MPTE52
     // 获取第 pi 个页的权限（pi ∈ [0, 15]）
     uint8_t perms(uint8_t pi) const;
 };
+#endif //MPT_ENABLED
 
-
-
+#if MPT_CACHE_ENABLED
 struct MPTCacheEntry
 {
     Addr tag;                  // region base（对齐后的地址）   目前这个 tag 用不上，用于查找的 key 是下面 unordered map 中的 Addr，此处 tag 的用处为增加调试信息 + 以后扩展为 set-ass 时可用
@@ -131,6 +166,9 @@ struct MPTCacheEntry
     int level = -1;
     uint8_t log2RegionSize = 0;   //C++ 的 uint8_t 是8-bit
 };
+#endif //MPT_CACHE_ENABLED
+
+#if MPT_ENABLED 
 struct MPTInfoInTLB
 {
     MPTInfoRaw raw;
@@ -164,7 +202,7 @@ struct MPTInfoInTLB
         return info;
     }
 };
-
+#endif //MPT_ENABLED
 
 
 
@@ -339,7 +377,10 @@ struct TlbEntry : public Serializable
     bool fromBackPreReq;
     bool preSign;
 
-    MPTInfoInTLB mptInfo;// JJW
+    #if MPT_ENABLED 
+    MPTInfoInTLB mptInfo;
+    #endif //MPT_ENABLED
+
 
     TlbEntry()
         : paddr(0),
@@ -360,8 +401,10 @@ struct TlbEntry : public Serializable
           isPre(false),
           fromForwardPreReq(false),
           fromBackPreReq(false),
-          preSign(false),
-          mptInfo()
+          preSign(false)
+#if MPT_ENABLED
+        , mptInfo()
+#endif 
     {
     }
 

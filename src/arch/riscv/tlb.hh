@@ -45,6 +45,16 @@
 #include "params/RiscvTLB.hh"
 #include "sim/sim_object.hh"
 #include "arch/riscv/plru.hh"
+#include "cpu/translation.hh" //translation  class DataTranslation : public BaseMMU::Translation
+#include <unordered_map>
+#include <vector>
+#include <optional>
+#include <cstdint> 
+#include <functional>
+#include <cassert>
+#include "cpu/base.hh"
+#include "params/RiscvTLB.hh"
+#include "sim/sim_object.hh"
 
 namespace gem5
 {
@@ -62,6 +72,8 @@ struct MPTSenderState : public Packet::SenderState {
     MPTSenderState(ThreadContext *tc_, BaseMMU::Translation *tr_)
         : tc(tc_), translation(tr_) {}
 };
+
+#if MPT_ENABLED
 struct MPT {
 
     Addr rootPPN; // 根页表物理页号（页号单位）
@@ -86,6 +98,9 @@ struct MPT {
                      std::function<void(MPTE52)> callback) const;
 
 };
+#endif //MPT_ENABLED
+
+#if MPT_CACHE_ENABLED
 
 class MPTCache52 {
   private:
@@ -180,7 +195,7 @@ class MPTCache52 {
           //callback是一个函数指针的封装，类型是：std::function<void(bool, MPTCacheEntry)>
 
 };
-
+#endif //MPT_CACHE_ENABLED
 
 
 class Walker;
@@ -240,12 +255,15 @@ class TLB : public BaseTLB
 
     Walker *walker;
 
-  // #if MPT_ENABLED
-	  MPT globalMPT;//globalMPT/mptcache是在mmu_mpt_and_mptcache-Smmpt52.cc中创建的。
-	  // #if MPT_CACHE_ENABLED
-	    MPTCache52* globalMPTCache;
-	//  #endif
-	// #endif
+	#if MPT_ENABLED
+	extern gem5::RiscvISA::MPT globalMPT;//globalMPT/mptcache是在mmu_mpt_and_mptcache-Smmpt52.cc中创建的。
+	//相应地，在tlb.cc中定义的TLB类构造函数中，也不包括mpt mptcache的初始化。
+	  #if MPT_CACHE_ENABLED
+	  //extern MPTCache52 globalMPTCache;
+	  extern gem5::RiscvISA::MPTCache52* globalMPTCache;
+	  #endif
+
+	#endif
 
     struct TlbStats : public statistics::Group
     {
@@ -352,6 +370,8 @@ class TLB : public BaseTLB
         statistics::Formula dTLBMissRate;
 
     } stats;
+    
+    void regStats() override; 
 
   public:
     PMAChecker *pma;
@@ -458,27 +478,26 @@ class TLB : public BaseTLB
     
 
 
-    void checkMPTPermInTLB(TlbEntry* entry, Addr vaddr, Addr paForMPTCheck, BaseMMU::Mode mode,
-      ThreadContext *tc,
-      BaseMMU::Translation *translation,
-      //  #if MPT_ENABLED
-      const MPT& mpt,
-  //    #if MPT_CACHE_ENABLED
-      MPTCache52* cache,
-  // //    #endif
-  //  #endif
-      RequestPtr req
- 
-  );
+ void checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMPTCheck, BaseMMU::Mode mode,
+    ThreadContext *tc,
+    Translation *translation,
+    RequestPtr req
+ #if MPT_ENABLED
+     , const MPT& mpt
+   #if MPT_CACHE_ENABLED
+     , MPTCache52* cache
+   #endif
+ #endif
+ );
 	
-	// #if MPT_ENABLED
+	#if MPT_ENABLED
 		// 根据 logBytes 推导出 MPT 的层级（L0~L3）
 		inline int getLevelForPageSizeLog2(uint8_t logBytes);
-	// #endif
+	#endif
 	
-	// #if MPT_ENABLED
+	#if MPT_ENABLED
     Fault createMPTPagefault(Addr vaddr, Addr paForMPTCheck, BaseMMU::Mode mode);
-  // #endif
+  #endif
 
 
 
