@@ -45,7 +45,11 @@
 #include "params/RiscvTLB.hh"
 #include "sim/sim_object.hh"
 #include "arch/riscv/plru.hh"
+
+#include "arch/generic/mmu.hh"
 #include "cpu/translation.hh" //translation  class DataTranslation : public BaseMMU::Translation
+#include "mem/request.hh"
+
 #include <unordered_map>
 #include <vector>
 #include <optional>
@@ -520,7 +524,7 @@ class TLB : public BaseTLB
 
  void checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMPTCheck, BaseMMU::Mode mode,
     ThreadContext *tc,
-    gem5::Translation *translation,
+    gem5::BaseMMU::Translation *translation,
     gem5::RequestPtr req
  #if MPT_ENABLED
      , const MPT& mpt
