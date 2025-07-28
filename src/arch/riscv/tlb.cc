@@ -70,6 +70,434 @@ using namespace RiscvISA;
 //  RISC-V TLB
 //
 
+
+#if MPT_ENABLED
+MPT::MPT() : nextPPN(0x10000) {
+    rootPPN = buildSimulatedMPTTree();
+}
+
+
+
+MPTE52 MPT::simulateLeafAllowAll() const {
+    uint64_t raw = 0;
+    raw |= 0x1; // V
+    raw |= 0x2; // L
+
+#if MPT_SIMULATE_N_BIT
+    raw |= (1ULL << 63); // N = 1 表示 napot
+#endif
+
+    for (int i = 0; i < MPT_NUM_PERMS; ++i) { // 设置16个权限段，每段3bit，为 0b111（R/W/X）
+        raw |= ((uint64_t)(MPT_PERM_R | MPT_PERM_W | MPT_PERM_X)
+               << (2 + i * MPT_PERM_BITS_PER_ENTRY));
+    }
+
+    return MPTE52(raw);
+}
+
+
+MPTE52 MPT::simulateNonLeaf(Addr nextLevelPPN) const {
+    uint64_t raw = 0;
+    raw |= 0x1; // V
+    raw |= (nextLevelPPN & 0x000FFFFFFFFFFFFF) << 10;
+    return MPTE52(raw);
+}
+
+Addr MPT::allocMPTPage(const std::vector<MPTE52>& entries) {
+    Addr ppn = nextPPN++;
+    Addr baseAddr = ppn << 12;
+    for (size_t i = 0; i < entries.size(); ++i) {
+        Addr addr = baseAddr + i * MPT_MPTE_SIZE;
+        simulatedMPTMemory[addr] = entries[i];
+    }
+    return ppn;
+}
+
+Addr MPT::buildSimulatedMPTTree(int levels) {
+    assert(levels >= 1 && levels <= MPT_LEVELS);
+    std::vector<MPTE52> leafEntries(512, simulateLeafAllowAll());
+    Addr leafPPN = allocMPTPage(leafEntries);
+    Addr lowerPPN = leafPPN;
+    for (int l = 1; l < levels; ++l) {
+        std::vector<MPTE52> levelEntries(512);
+        levelEntries[0] = simulateNonLeaf(lowerPPN);
+        Addr currentPPN = allocMPTPage(levelEntries);
+        lowerPPN = currentPPN;
+    }
+    return lowerPPN;
+}
+
+uint64_t MPT::readMPTE(Addr paddr, ThreadContext *tc, PMAChecker *pma, PMP *pmp, int &accessCounter) const {
+    // ① 构造 Request
+    RequestPtr req = std::make_shared<Request>(
+        paddr,
+        sizeof(MPTE52),
+        Request::PHYSICAL,
+        tc->getCpuPtr()->thread[tc->threadId()]->getMasterId()
+    );
+
+    // ② PMA 检查
+    pma->check(req);
+
+    // ③ PMP 检查
+    PrivilegeMode pmode = getMemPriv(tc, BaseMMU::Read);
+    gem5::Fault fault = pmp->pmpCheck(req, BaseMMU::Read, pmode, tc);
+
+    if (fault != NoFault) {
+        panic("PMP blocked access to MPTE at 0x%lx\n", paddr);
+    }
+
+    // ④ 模拟 memory 读取
+    auto it = simulatedMPTMemory.find(paddr);
+    if (it != simulatedMPTMemory.end()) {
+        accessCounter++;  // 每次模拟访问memory都累加
+        return it->second.raw;
+    } else {
+        return 0;
+    }
+}
+
+
+
+// Smmp52 多级 MPT 遍历，根据虚拟地址返回 MPTE52（或无效项）
+MPTE52 MPT::walk(Addr vaddr, ThreadContext *tc, PMAChecker *pma, PMP *pmp, int &accessCounter) const {
+    Addr base = rootPPN << 12;  // 页表基地址 = PPN × 4KB（页表页固定为 4KB）
+
+    for (int level = MPT_LEVELS - 1; level >= 0; --level) {
+        // 每级使用9-bit 索引（512 项）
+        size_t shift = level * 9 + 12;
+        size_t index = (vaddr >> shift) & 0x1FF;
+        Addr paddr = base + index * MPT_MPTE_SIZE;
+
+        // 读取 MPTE 项
+        uint64_t raw = readMPTE(paddr, tc, pma, pmp, accessCounter);
+        MPTE52 mpte(raw);
+
+        if (!mpte.isValid()) {
+            return MPTE52(); // 无效项
+        }
+
+        if (mpte.isLeaf()) {
+            // 找到叶子项，直接返回
+            return mpte;
+        }
+
+        // 否则继续下一级
+        base = mpte.nextLevelPAddr();
+    }
+
+    //未找到叶子，返回无效项
+    return MPTE52();
+}
+
+//all miss, 127*4; L3 hit , else miss,  127*3.   L3 L2 hit , l1 l0 miss, 127*2.   L3 L2 L1 hit , l0 miss 127
+
+//新增：异步延迟 walk 接口，127 cycle 后触发回调返回结果
+void MPT::walkDelayed(Addr vaddr,
+                      ThreadContext *tc,
+                      PMAChecker *pma, PMP *pmp,
+                      std::function<void(MPTE52)> callback) const
+{
+    int accessCounter = 0;
+    MPTE52 result = walk(vaddr, tc, pma, pmp, accessCounter); // 使用同步接口立即生成结果（只模拟“等这么久才交结果”）
+
+    Tick delay = accessCounter  * 127 * SimClock::Int::ns(); // 模拟127 cycle
+
+    // 延迟调用 callback，让请求等127个周期才拿到结果
+    tc->getCpuPtr()->schedule(
+        new LambdaEvent([=]() {
+            callback(result);
+        }),
+        curTick() + delay);
+}
+
+
+#endif // MPT_ENABLED
+
+
+#if MPT_ENABLED
+MPT globalMPT;
+#endif
+
+
+
+
+#if MPT_CACHE_ENABLED
+	
+MPTCache52::MPTCache52(size_t capL0, size_t capL1, size_t capL2, size_t capL3, size_t capSP)
+    : capacityL0(capL0),
+      capacityL1(capL1),
+      capacityL2(capL2),
+      capacityL3(capL3),
+      capacitySP(capSP),
+      plruL0(capL0),
+      plruL1(capL1),
+      plruL2(capL2),
+      plruL3(capL3),
+      plruSP(capSP)
+{
+    tagListL0.reserve(capL0);
+    tagListL1.reserve(capL1);
+    tagListL2.reserve(capL2);
+    tagListL3.reserve(capL3);
+    tagListSP.reserve(capSP);
+}
+
+MPTCache52::MPTCache52()
+    : capacityL0(configuredSizeL0),
+      capacityL1(configuredSizeL1),
+      capacityL2(configuredSizeL2),
+      capacityL3(configuredSizeL3),
+      capacitySP(configuredSizeSP),
+      plruL0(configuredSizeL0),
+      plruL1(configuredSizeL1),
+      plruL2(configuredSizeL2),
+      plruL3(configuredSizeL3),
+      plruSP(configuredSizeSP)
+{
+    tagListL0.reserve(capacityL0);
+    tagListL1.reserve(capacityL1);
+    tagListL2.reserve(capacityL2);
+    tagListL3.reserve(capacityL3);
+    tagListSP.reserve(capacitySP);
+}
+
+
+void MPTCache52::configureSize(int sL0, int sL1, int sL2, int sL3, int sSP) {
+    configuredSizeL0 = sL0;
+    configuredSizeL1 = sL1;
+    configuredSizeL2 = sL2;
+    configuredSizeL3 = sL3;
+    configuredSizeSP = sSP;
+}
+
+Addr MPTCache52::regionAlign(Addr pa, int level) const {
+    return pa & ~(getRegionSizeForLevel(level) - 1);
+}
+
+// 非 const 版本：允许修改
+std::unordered_map<Addr, MPTCacheEntry>& MPTCache52::getTableByLevel(int level) {
+    if (level == 0) return tableL0;
+    else if (level == 1) return tableL1;
+    else if (level == 2) return tableL2;
+    else if (level == 3) return tableL3;
+    else return tableSP;
+}
+
+// const 版本：只读
+const std::unordered_map<Addr, MPTCacheEntry>& MPTCache52::getTableByLevel(int level) const {
+    if (level == 0) return tableL0;
+    else if (level == 1) return tableL1;
+    else if (level == 2) return tableL2;
+    else if (level == 3) return tableL3;
+    else return tableSP;
+}
+
+// 允许修改
+size_t& MPTCache52::getCapacityByLevel(int level) {
+    if (level == 0) return capacityL0;
+    else if (level == 1) return capacityL1;
+    else if (level == 2) return capacityL2;
+    else if (level == 3) return capacityL3;
+    else return capacitySP;
+}
+
+// 只读版本（如果需要在 const 函数中读取容量）
+size_t MPTCache52::getCapacityByLevel(int level) const {
+    if (level == 0) return capacityL0;
+    else if (level == 1) return capacityL1;
+    else if (level == 2) return capacityL2;
+    else if (level == 3) return capacityL3;
+    else return capacitySP;
+}
+
+// -------- PLRU 替换支持 --------
+std::vector<Addr>& MPTCache52::getTagListByLevel(int level) {
+    if (level == 0) return tagListL0;
+    else if (level == 1) return tagListL1;
+    else if (level == 2) return tagListL2;
+    else if (level == 3) return tagListL3;
+    else return tagListSP;
+}
+
+PLRUTreeN& MPTCache52::getPLRUByLevel(int level) {
+    if (level == 0) return plruL0;
+    else if (level == 1) return plruL1;
+    else if (level == 2) return plruL2;
+    else if (level == 3) return plruL3;
+    else return plruSP;
+}
+// -------------------------------
+
+	
+	
+//int MPTCache52::configuredSize = MPT_CACHE_SIZE;
+	int MPTCache52::configuredSizeL0 = 0;
+	int MPTCache52::configuredSizeL1 = 0;
+	int MPTCache52::configuredSizeL2 = 0;
+	int MPTCache52::configuredSizeL3 = 0;
+	int MPTCache52::configuredSizeSP = 0;
+
+	
+
+// 用指针延迟构造 globalMPTCache
+// tlb.cc中都得改成箭头->(而不是.)来使用globalMPTCache 了
+MPTCache52* globalMPTCache = nullptr;
+
+// 在 SimObject 初始化时调用，完成构造
+void MPTCache52::initMPTCacheFromParams(const RiscvTLBParams *params)
+{
+    // MPTCache52::configureSize(params->mptcache_size);       // 设置静态变量
+    // globalMPTCache = new MPTCache52();                       // 延迟构造，使用配置值
+
+    MPTCache52::configureSize(
+        params->mptcache_l0_size,
+        params->mptcache_l1_size,
+        params->mptcache_l2_size,
+        params->mptcache_l3_size,
+        params->mptcache_sp_size
+    );
+    globalMPTCache = new MPTCache52();  // 默认构造函数会用上面这 5 个静态值
+
+    //"在 gem5 中像这样用于全局单例（global singleton）的 new，不需要手动释放（不需要 delete）"
+    DPRINTF(TLB, "Initialized globalMPTCache with size = %d\n", params->mptcache_size);
+}
+
+	  
+	 
+	/*	这样不行，没法做到在初始化时就用到py传来的参数
+	int runtimeMPTCacheSize //= MPT_CACHE_SIZE;
+
+	void initMPTCacheFromParams(const RiscvTLBParams *params)
+	{
+		runtimeMPTCacheSize = params->mptcache_size;
+	}
+	
+	MPTCache52 globalMPTCache(runtimeMPTCacheSize);
+	*/
+	
+	
+	
+	
+void MPTCache52::fetchDelayed(
+    Addr pa,
+    int level,
+    const MPT &mpt,
+    ThreadContext *tc,
+    PMAChecker *pma, PMP *pmp,
+    std::function<void(bool /*hit*/, MPTCacheEntry)> callback) const
+    //callback是一个函数指针的封装，类型是：std::function<void(bool, MPTCacheEntry)>
+{
+    Addr aligned = regionAlign(pa, level);
+    auto& table = getTableByLevel(level);
+    auto it = table.find(aligned);
+
+    if (it != table.end() && it->second.valid) {
+        // 命中：直接 10 cycle 延迟
+        Tick delay = 10 * SimClock::Int::ns();
+        MPTCacheEntry entry = it->second;
+
+//PLRU 更新
+		auto& tagList = this->getTagListByLevel(level);
+		auto& plru = this->getPLRUByLevel(level);
+
+		auto itTag = std::find(tagList.begin(), tagList.end(), aligned);
+		if (itTag != tagList.end()) {
+			size_t idx = std::distance(tagList.begin(), itTag);
+			plru.access(idx);  // 表示此 entry 被访问，刷新路径
+		}
+// -----------
+
+
+        // 统计命中
+        //++globalMPT->mptCacheL1Misses;
+        if (level == 0) ++globalMPT->mptCacheL0Hits;
+        else if (level == 1) ++globalMPT->mptCacheL1Hits;
+        else if (level == 2) ++globalMPT->mptCacheL2Hits;
+        else if (level == 3) ++globalMPT->mptCacheL3Hits;
+        else ++globalMPT->mptCacheSPHits;
+
+        tc->getCpuPtr()->schedule(
+            new LambdaEvent([=]() {
+                callback(true, entry);// true表示命中
+            }),
+            curTick() + delay);
+    } else {
+        // 未命中：调用 mpt.walkDelayed() 模拟完整页表访问延迟
+        mpt.walkDelayed(pa, tc, pma, pmp, 
+            [=](MPTE52 mpte) {
+                if (!mpte.isValid()) {
+                    callback(false, {});
+                    return;
+                }
+
+                // 插入缓存
+                auto& table_mut = this->getTableByLevel(level);//获取当前层级（L0/L1/L2/L3/SP）对应的缓存表（map）
+                size_t& cap = this->getCapacityByLevel(level);//获取当前层级对应 cache 的最大容量限制
+
+
+//PLRU 替换
+				auto& tagList = this->getTagListByLevel(level);//获取当前层级用于记录 entry 顺序的 tag 列表（vector）
+				auto& plru = this->getPLRUByLevel(level);//获取当前层级的 PLRU 树，用于决定 victim 替换哪一项、刷新访问路径
+
+				if (table_mut.size() >= cap) {
+					size_t victimIdx = plru.getVictim();
+					Addr victimAddr = tagList[victimIdx];
+					table_mut.erase(victimAddr);
+					tagList[victimIdx] = aligned;
+					plru.access(victimIdx);
+				} else {
+					tagList.push_back(aligned);
+					plru.access(tagList.size() - 1);
+				}
+// -----------
+
+
+/*随机替换
+                if (table_mut.size() >= cap) {
+                    auto randomIt = std::next(table_mut.begin(), rand() % table_mut.size());
+                    table_mut.erase(randomIt);
+                }
+*/
+				
+/* 另一种实现方式
+                auto& table_mut = const_cast<MPTCache52*>(this)->getTableByLevel(level);
+                size_t& cap = const_cast<MPTCache52*>(this)->getCapacityByLevel(level);
+                if (table_mut.size() >= cap) {
+                    auto randomIt = std::next(table_mut.begin(), rand() % table_mut.size());
+                    table_mut.erase(randomIt);
+                }
+*/
+
+				uint64_t regionSize = getRegionSizeForLevel(level);
+				if (mpte.getN()) {
+					regionSize *= 512;  // napot 模式，等效区域放大
+				}
+
+				MPTCacheEntry entry = {
+					aligned, mpte, true, level, log2floor(regionSize)
+				};
+
+                table_mut[aligned] = entry;
+
+                // 统计未命中
+                if (level == 0) ++globalMPT->mptCacheL0Misses;
+                else if (level == 1) ++globalMPT->mptCacheL1Misses;
+                else if (level == 2) ++globalMPT->mptCacheL2Misses;
+                else if (level == 3) ++globalMPT->mptCacheL3Misses;
+                else ++globalMPT->mptCacheSPMisses;
+
+                callback(false, entry);
+            }
+        );
+    }
+}
+
+
+#endif//MPT_CACHE_ENABLED
+
+
+
 static Addr
 buildKey(Addr vpn, uint16_t asid, uint8_t translateMode)
 {
