@@ -166,15 +166,17 @@ uint64_t MPT::readMPTE(Addr paddr, ThreadContext *tc, PMAChecker *pma, PMP *pmp,
         paddr,
         sizeof(MPTE52),
         Request::PHYSICAL,
-        tc->getCpuPtr()->getMasterId()
+        tc->contextId()
+        //tc->getCpuPtr()->getMasterId()
     );
 
     // 2 PMA 检查
     pma->check(req);
 
     // 3 获取特权级：类内成员函数调用
-    PrivilegeMode pmode = tlb->getMemPriv(tc, BaseMMU::Read);
-
+    //PrivilegeMode pmode = tlb->getMemPriv(tc, BaseMMU::Read);    
+    PrivilegeMode pmode = static_cast<MMU *>(tc->getMMUPtr())->getMemPriv(tc, BaseMMU::Read);
+    //参考：pmp->pmpCheck(req, mode, static_cast<MMU *>(tc->getMMUPtr())->getMemPriv(tc, mode), tc);
     gem5::Fault fault = pmp->pmpCheck(req, BaseMMU::Read, pmode, tc);
 
     if (fault != NoFault) {
