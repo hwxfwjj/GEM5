@@ -244,13 +244,22 @@ void MPT::walkDelayed(Addr vaddr,
     //Tick delay = accessCounter  * 127 * SimClock::Int::ns(); // 模拟127 cycle
     Tick delay = accessCounter  * 127 * SimClock::as_int::ns; 
 
-    // 延迟调用 callback，让请求等127个周期才拿到结果
-    tc->getCpuPtr()->schedule(
-        new LambdaEvent([=]() {
-            callback(result);
-        }),
-        curTick() + delay);
+    // 延迟调用 callback，让请求等127个周期才拿到结果（用 eventq.hh中的 EventFunctionWrapper 包装 lambda）
+    curEventQueue()->schedule(
+        new gem5::EventFunctionWrapper(
+            [=]() {
+                callback(result);
+            },
+            "mpt.walkDelayed_callback", // 事件名称
+            true  // 自动释放
+        ),
+        curTick() + delay
+    );
 }
+
+
+
+
 
 
 #endif // MPT_ENABLED
@@ -464,11 +473,20 @@ void MPTCache52::fetchDelayed(
         else if (level == 3) ++globalMPT->mptCacheL3Hits;
         else ++globalMPT->mptCacheSPHits;
 
-        tc->getCpuPtr()->schedule(
-            new LambdaEvent([=]() {
-                callback(true, entry);// true表示命中
-            }),
-            curTick() + delay);
+        // 异步回调：延迟 10 cycle 执行 callback(true, entry)    
+        curEventQueue()->schedule(
+            new gem5::EventFunctionWrapper(
+                [=]() {
+                    callback(true, entry); // true 表示命中
+                },
+                "mptcache.fetchDelayed_hit", // 事件名
+                true  // 自动释放
+            ),
+            curTick() + delay
+        );
+
+
+
     } else {
         // 未命中：调用 mpt.walkDelayed() 模拟完整页表访问延迟
         mpt.walkDelayed(pa, tc, pma, pmp, 
