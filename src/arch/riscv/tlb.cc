@@ -454,7 +454,7 @@ void MPTCache52::initMPTCacheFromParams(const RiscvTLBParams *params)
 void MPTCache52::fetchDelayed(
     Addr pa,
     int level,
-    const MPT &mpt,
+    /*const*/ MPT &mpt,
     ThreadContext *tc,
     PMAChecker *pma, PMP *pmp,
     std::function<void(bool /*hit*/, MPTCacheEntry)> callback) //const

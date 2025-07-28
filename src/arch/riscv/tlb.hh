@@ -227,7 +227,7 @@ class MPTCache52 {
     void fetchDelayed(
           Addr pa,
           int level,
-          const MPT &mpt,
+          /*const*/ MPT &mpt,
           ThreadContext *tc,
           PMAChecker *pma, PMP *pmp,
           std::function<void(bool /*hit*/, MPTCacheEntry)> callback);// const;
