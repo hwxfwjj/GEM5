@@ -37,7 +37,7 @@
 #include "base/types.hh"
 #include "sim/serialize.hh"
 
-#include "arch/riscv/mmu.hh"
+//#include "arch/riscv/mmu.hh"
 #include "arch/generic/mmu.hh"
 // 是否启用 MPT（默认启用，使用 -D__ARCH_RISCV_MMU_MPT_HH__ 禁用）	
 //#ifndef __ARCH_RISCV_MMU_MPT_HH__
