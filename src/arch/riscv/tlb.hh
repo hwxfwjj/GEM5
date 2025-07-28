@@ -44,8 +44,9 @@
 #include "mem/request.hh"
 #include "params/RiscvTLB.hh"
 #include "sim/sim_object.hh"
-#include "arch/riscv/plru.hh"
 
+#include <type_traits>
+#include "arch/riscv/plru.hh"
 #include "arch/generic/mmu.hh"
 #include "cpu/translation.hh" //translation  class DataTranslation : public BaseMMU::Translation
 #include "mem/request.hh"
