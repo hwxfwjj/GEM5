@@ -207,6 +207,8 @@ class MPTCache52 {
     // -------- PLRU 替换支持 --------
     std::vector<Addr>& getTagListByLevel(int level);
     PLRUTreeN& getPLRUByLevel(int level);
+    const std::vector<Addr>& getTagListByLevel(int level) const;
+    const PLRUTreeN& getPLRUByLevel(int level) const;      //const重载
     // -------------------------------
 
 

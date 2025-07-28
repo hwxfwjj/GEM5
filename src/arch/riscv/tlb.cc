@@ -377,6 +377,23 @@ PLRUTreeN& MPTCache52::getPLRUByLevel(int level) {
     else if (level == 3) return plruL3;
     else return plruSP;
 }
+
+const std::vector<Addr>& MPTCache52::getTagListByLevel(int level) const {
+    if (level == 0) return tagListL0;
+    else if (level == 1) return tagListL1;
+    else if (level == 2) return tagListL2;
+    else if (level == 3) return tagListL3;
+    else return tagListSP;
+}
+
+const PLRUTreeN& MPTCache52::getPLRUByLevel(int level) const {
+    if (level == 0) return plruL0;
+    else if (level == 1) return plruL1;
+    else if (level == 2) return plruL2;
+    else if (level == 3) return plruL3;
+    else return plruSP;
+}
+
 // -------------------------------
 
 	
