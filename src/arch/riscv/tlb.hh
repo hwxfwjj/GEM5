@@ -244,7 +244,7 @@ class MPTCache52 {
 
 
   
-  
+
 
 class Walker;
 
@@ -520,8 +520,8 @@ class TLB : public BaseTLB
 
  void checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMPTCheck, BaseMMU::Mode mode,
     ThreadContext *tc,
-    Translation *translation,
-    RequestPtr req
+    gem5::Translation *translation,
+    gem5::RequestPtr req
  #if MPT_ENABLED
      , const MPT& mpt
    #if MPT_CACHE_ENABLED
