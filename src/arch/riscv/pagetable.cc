@@ -64,7 +64,10 @@ TlbEntry::unserialize(CheckpointIn &cp)
 
 #if MPT_ENABLED
 
-// 获取当前层级的“单页大小”    运行时获取页大小, 普通的全局 helper 函数，不是属于某个类或结构体的成员函数，放在命名空间外部
+// Retrieve the "single page size" for the current level. 
+//This is a global helper function to get the page size at runtime, 
+//not a member function of any class or structure, and should be placed outside of the namespace.
+
 uint64_t getPageSizeForLevel(int level) {
     switch (level) {
         case 0: return MPT_LEAF_L0_PAGE_SIZE;
@@ -75,7 +78,7 @@ uint64_t getPageSizeForLevel(int level) {
     }
 }
 
-// 获取当前层级的 MPTE 区域大小（16 个页）
+// Retrieve the MPTE region size for the current level (16 pages).
 uint64_t getRegionSizeForLevel(int level) {
     return MPT_NUM_PERMS * getPageSizeForLevel(level);
 }
@@ -88,35 +91,36 @@ uint8_t log2floor(uint64_t x) {
 
 
 
-MPTE52::MPTE52() : raw(0) {}// 默认构造函数（无效项）
+MPTE52::MPTE52() : raw(0) {}
 
-MPTE52::MPTE52(uint64_t val) : raw(val) {}// 用原始值构造
+MPTE52::MPTE52(uint64_t val) : raw(val) {}
 
-bool MPTE52::isValid() const { return raw & 0x1; } // 是否有效
+bool MPTE52::isValid() const { return raw & 0x1; } 
 
-bool MPTE52::isLeaf() const { return raw & 0x2; } // 是否为叶子
+bool MPTE52::isLeaf() const { return raw & 0x2; } 
 
-bool MPTE52::getN() const { return (raw >> 63) & 0x1; } // N 位（bit 63）
+bool MPTE52::getN() const { return (raw >> 63) & 0x1; } // N （bit 63）
 
-// 下一层页表的物理页号（非叶子时使用）
+// Physical page number of the next-level page table (used when not a leaf).
 Addr MPTE52::nextLevelPPN() const {
     return (raw >> 10) & 0x000FFFFFFFFFFFFF; // bits 10~61
 }
 
-// 下一层页表物理地址（按 4KB 页对齐）
+// Physical address of the next-level page table (aligned to 4KB pages).
 Addr MPTE52::nextLevelPAddr() const {
     return nextLevelPPN() << 12;   //2^12=4KB
 }
 
-// 获取第 pi 个页的权限（pi ∈ [0, 15]）
+// Retrieve the pi-th （pi ∈ [0, 15]）
 uint8_t MPTE52::perms(uint8_t pi) const {
-    // 若启用了 napot，返回统一权限（使用 perms[0]）
+    // If napot is enabled, return unified permissions (using `perms[0]`).
     if (getN())
         return (raw >> 2) & MPT_PERM_MASK;
 
-    // 否则返回第 pi 项权限
+    // Otherwise, return the permissions of the `pi`-th entry.
     if (pi >= MPT_NUM_PERMS) return 0;
-    return (raw >> (2 + pi * MPT_PERM_BITS_PER_ENTRY)) & MPT_PERM_MASK;//2是因为最后两位分别是valid和leaf
+    return (raw >> (2 + pi * MPT_PERM_BITS_PER_ENTRY)) & MPT_PERM_MASK;
+    //2 is because the last two bits represent `valid` and `leaf`.
 }
 
 
@@ -124,15 +128,15 @@ uint8_t MPTE52::perms(uint8_t pi) const {
 
 
 
-//命名空间级别的工具函数，不在 struct 里面
+//Namespace-level utility function, not inside a struct.
 bool checkMPTEPermissions(const MPTE52 &mpte, BaseMMU::Mode mode, Addr range_offset, int level)
 {
     if (!mpte.isValid() || !mpte.isLeaf())
         return false;
 
-    // 当前层的页大小
+    // The page size of the current level.
     uint64_t pageSize = getPageSizeForLevel(level);         // e.g. 2MB for level=1
-    uint8_t pi = (range_offset / pageSize) & 0xF;            // 选择第几个页的权限
+    uint8_t pi = (range_offset / pageSize) & 0xF;            // Select the permissions of the specified page.
 
     uint8_t perm = mpte.perms(pi);
 

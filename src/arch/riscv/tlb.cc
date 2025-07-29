@@ -61,7 +61,7 @@
 #include "sim/system.hh"
 
 #include "sim/eventq.hh" //LambdaEvent
-#include "base/types.hh"      // for Addr, uint64_t 等类型， 否则用不了   //typedef uint64_t Tick;
+#include "base/types.hh"      // for Addr, uint64_t //typedef uint64_t Tick;
 #include "base/statistics.hh" //statistics::Scalar
 #include "cpu/translation.hh" //translation  class DataTranslation : public BaseMMU::Translation
 #include "mem/packet.hh"//SenderState
@@ -94,10 +94,10 @@ MPTE52 MPT::simulateLeafAllowAll() const {
     raw |= 0x2; // L
 
 #if MPT_SIMULATE_N_BIT
-    raw |= (1ULL << 63); // N = 1 表示 napot
+    raw |= (1ULL << 63); //  napot
 #endif
 
-    for (int i = 0; i < MPT_NUM_PERMS; ++i) { // 设置16个权限段，每段3bit，为 0b111（R/W/X）
+    for (int i = 0; i < MPT_NUM_PERMS; ++i) { // Set 16 permission segments, each 3 bits, with value 0b111 (R/W/X)
         raw |= ((uint64_t)(MPT_PERM_R | MPT_PERM_W | MPT_PERM_X)
                << (2 + i * MPT_PERM_BITS_PER_ENTRY));
     }
@@ -171,7 +171,7 @@ uint64_t MPT::readMPTE(Addr paddr, ThreadContext *tc, PMAChecker *pma, PMP *pmp,
 
 uint64_t MPT::readMPTE(Addr paddr, ThreadContext *tc, PMAChecker *pma, PMP *pmp, int &accessCounter) const
 {
-    //  1. 构造 Request, 获取 MasterId：直接从 tc 获取
+// Construct Request and retrieve MasterId: Directly obtain from tc (ThreadContext)
     RequestPtr req = std::make_shared<Request>(
         paddr,
         sizeof(MPTE52),
@@ -180,23 +180,23 @@ uint64_t MPT::readMPTE(Addr paddr, ThreadContext *tc, PMAChecker *pma, PMP *pmp,
         //tc->getCpuPtr()->getMasterId()
     );
 
-    // 2 PMA 检查
+    // 2 PMA check
     pma->check(req);
 
-    // 3 获取特权级：类内成员函数调用
+    // 3 Retrieve privilege level: Called by a member function within the class
     //PrivilegeMode pmode = tlb->getMemPriv(tc, BaseMMU::Read);    
     PrivilegeMode pmode = static_cast<MMU *>(tc->getMMUPtr())->getMemPriv(tc, BaseMMU::Read);
-    //参考：pmp->pmpCheck(req, mode, static_cast<MMU *>(tc->getMMUPtr())->getMemPriv(tc, mode), tc);
+    //reference：pmp->pmpCheck(req, mode, static_cast<MMU *>(tc->getMMUPtr())->getMemPriv(tc, mode), tc);
     gem5::Fault fault = pmp->pmpCheck(req, BaseMMU::Read, pmode, tc);
 
     if (fault != NoFault) {
         panic("PMP blocked access to MPTE at 0x%lx\n", paddr);
     }
 
-    // 4 模拟 memory 读取
+    // 4 Simulate memory read
     auto it = simulatedMPTMemory.find(paddr);
     if (it != simulatedMPTMemory.end()) {
-        accessCounter++;  // 每次模拟访问memory都累加
+        accessCounter++;  // Each time a memory access is simulated, it is accumulated.
         return it->second.raw;
     } else {
         return 0;
@@ -204,59 +204,59 @@ uint64_t MPT::readMPTE(Addr paddr, ThreadContext *tc, PMAChecker *pma, PMP *pmp,
 }
 
 
-// Smmp52 多级 MPT 遍历，根据虚拟地址返回 MPTE52（或无效项）
+// Multi-level MPT traversal in Smmpt52, returning MPTE52 (or invalid entry) based on the virtual address.
 MPTE52 MPT::walk(Addr vaddr, ThreadContext *tc, PMAChecker *pma, PMP *pmp, int &accessCounter) const {
-    Addr base = rootPPN << 12;  // 页表基地址 = PPN × 4KB（页表页固定为 4KB）
+    Addr base = rootPPN << 12;  // Page table base address = PPN × 4KB (Page table page size is fixed at 4KB).
 
     for (int level = MPT_LEVELS - 1; level >= 0; --level) {
-        // 每级使用9-bit 索引（512 项）
+        // Each level uses a 9-bit index (512 entries).
         size_t shift = level * 9 + 12;
         size_t index = (vaddr >> shift) & 0x1FF;
         Addr paddr = base + index * MPT_MPTE_SIZE;
 
-        // 读取 MPTE 项
+        // read MPTE 
         uint64_t raw = readMPTE(paddr, tc, pma, pmp, accessCounter);
         MPTE52 mpte(raw);
 
         if (!mpte.isValid()) {
-            return MPTE52(); // 无效项
+            return MPTE52(); // Invalid entry.
         }
 
         if (mpte.isLeaf()) {
-            // 找到叶子项，直接返回
+            // Find the leaf entry and return directly.
             return mpte;
         }
 
-        // 否则继续下一级
+        // Otherwise, proceed to the next level.
         base = mpte.nextLevelPAddr();
     }
 
-    //未找到叶子，返回无效项
+    //Leaf not found, return invalid entry.
     return MPTE52();
 }
 
 //all miss, 127*4; L3 hit , else miss,  127*3.   L3 L2 hit , l1 l0 miss, 127*2.   L3 L2 L1 hit , l0 miss 127
 
-//新增：异步延迟 walk 接口，127 cycle 后触发回调返回结果
+//Asynchronous delayed walk interface, triggers callback to return results after 127 cycles.
 void MPT::walkDelayed(Addr vaddr,
                       ThreadContext *tc,
                       PMAChecker *pma, PMP *pmp,
                       std::function<void(MPTE52)> callback) //const
 {
     int accessCounter = 0;
-    MPTE52 result = walk(vaddr, tc, pma, pmp, accessCounter); // 使用同步接口立即生成结果（只模拟“等这么久才交结果”）
+    MPTE52 result = walk(vaddr, tc, pma, pmp, accessCounter); // Use the synchronous interface to generate results immediately (simulating "waiting this long for the result").
 
-    //Tick delay = accessCounter  * 127 * SimClock::Int::ns(); // 模拟127 cycle
+    //Tick delay = accessCounter  * 127 * SimClock::Int::ns(); // 127 cycle
     Tick delay = accessCounter  * 127 * SimClock::as_int::ns; 
 
-    // 延迟调用 callback，让请求等127个周期才拿到结果（用 eventq.hh中的 EventFunctionWrapper 包装 lambda）
+    // Delay the callback call, making the request wait for 127 cycles to get the result (wrap the lambda with EventFunctionWrapper from eventq.hh).
     curEventQueue()->schedule(
         new gem5::EventFunctionWrapper(
             [=]() {
                 callback(result);
             },
-            "mpt.walkDelayed_callback", // 事件名称
-            true  // 自动释放
+            "mpt.walkDelayed_callback", // event name
+            true  // Automatically release.
         ),
         curTick() + delay
     );
@@ -331,7 +331,7 @@ Addr MPTCache52::regionAlign(Addr pa, int level) const {
     return pa & ~(getRegionSizeForLevel(level) - 1);
 }
 
-// 非 const 版本：允许修改
+// non-const version
 std::unordered_map<Addr, MPTCacheEntry>& MPTCache52::getTableByLevel(int level) {
     if (level == 0) return tableL0;
     else if (level == 1) return tableL1;
@@ -340,7 +340,7 @@ std::unordered_map<Addr, MPTCacheEntry>& MPTCache52::getTableByLevel(int level) 
     else return tableSP;
 }
 
-// const 版本：只读
+// const : read only
 const std::unordered_map<Addr, MPTCacheEntry>& MPTCache52::getTableByLevel(int level) const {
     if (level == 0) return tableL0;
     else if (level == 1) return tableL1;
@@ -349,7 +349,7 @@ const std::unordered_map<Addr, MPTCacheEntry>& MPTCache52::getTableByLevel(int l
     else return tableSP;
 }
 
-// 允许修改
+
 size_t& MPTCache52::getCapacityByLevel(int level) {
     if (level == 0) return capacityL0;
     else if (level == 1) return capacityL1;
@@ -358,7 +358,7 @@ size_t& MPTCache52::getCapacityByLevel(int level) {
     else return capacitySP;
 }
 
-// 只读版本（如果需要在 const 函数中读取容量）
+
 size_t MPTCache52::getCapacityByLevel(int level) const {
     if (level == 0) return capacityL0;
     else if (level == 1) return capacityL1;
@@ -367,7 +367,7 @@ size_t MPTCache52::getCapacityByLevel(int level) const {
     else return capacitySP;
 }
 
-// -------- PLRU 替换支持 --------
+// -------- Supports PLRU (Pseudo-LRU) replacement. --------
 std::vector<Addr>& MPTCache52::getTagListByLevel(int level) {
     if (level == 0) return tagListL0;
     else if (level == 1) return tagListL1;
@@ -413,16 +413,16 @@ const PLRUTreeN& MPTCache52::getPLRUByLevel(int level) const {
 
 	
 
-// 用指针延迟构造 globalMPTCache
-// tlb.cc中都得改成箭头->(而不是.)来使用globalMPTCache 了
+// Use a pointer to delay the construction of globalMPTCache. When accessing this singleton elsewhere, please use the arrow operator `->` (instead of `.`) to use globalMPTCache.
+
 //MPTCache52* globalMPTCache = nullptr;
 gem5::RiscvISA::MPTCache52* gem5::RiscvISA::globalMPTCache = nullptr;
 
-// 在 SimObject 初始化时调用，完成构造
+// Called during SimObject initialization to complete the construction.
 void MPTCache52::initMPTCacheFromParams(const RiscvTLBParams *params)
 {
-    // MPTCache52::configureSize(params->mptcache_size);       // 设置静态变量
-    // globalMPTCache = new MPTCache52();                       // 延迟构造，使用配置值
+    // MPTCache52::configureSize(params->mptcache_size);       
+    // globalMPTCache = new MPTCache52();                       
 
     MPTCache52::configureSize(
         params->mptcache_l0_size,
@@ -431,9 +431,10 @@ void MPTCache52::initMPTCacheFromParams(const RiscvTLBParams *params)
         params->mptcache_l3_size,
         params->mptcache_sp_size
     );
-    globalMPTCache = new MPTCache52();  // 默认构造函数会用上面这 5 个静态值
+    globalMPTCache = new MPTCache52();  // The default constructor will use the above 5 static values.
 
-    //"在 gem5 中像这样用于全局单例（global singleton）的 new，不需要手动释放（不需要 delete）"
+    //MISC: In gem5, the `new` used for a global singleton (global singleton) does not require manual deallocation (no need for `delete`).
+
     DPRINTF(TLB, "Initialized globalMPTCache with size = L0:%d L1:%d L2:%d L3:%d SP:%d\n",
     params->mptcache_l0_size,
     params->mptcache_l1_size,
@@ -444,7 +445,8 @@ void MPTCache52::initMPTCacheFromParams(const RiscvTLBParams *params)
 
 	  
 	 
-	/*	这样不行，没法做到在初始化时就用到py传来的参数
+	/*	This approach doesn't work, as it cannot use the parameters passed from Python during initialization.
+
 	int runtimeMPTCacheSize //= MPT_CACHE_SIZE;
 
 	void initMPTCacheFromParams(const RiscvTLBParams *params)
@@ -465,31 +467,31 @@ void MPTCache52::fetchDelayed(
     ThreadContext *tc,
     PMAChecker *pma, PMP *pmp,
     std::function<void(bool /*hit*/, MPTCacheEntry)> callback) //const
-    //callback是一个函数指针的封装，类型是：std::function<void(bool, MPTCacheEntry)>
+    //  The callback is a function pointer wrapper, with the type: std::function<void(bool, MPTCacheEntry)>.
 {
     Addr aligned = regionAlign(pa, level);
     auto& table = getTableByLevel(level);
     auto it = table.find(aligned);
 
     if (it != table.end() && it->second.valid) {
-        // 命中：直接 10 cycle 延迟
+        // Hit: Apply a direct 10-cycle delay.
         //Tick delay = 10 * SimClock::Int::ns();    
         Tick delay = 10 * SimClock::as_int::ns;
         MPTCacheEntry entry = it->second;
 
-//PLRU 更新
+//PLRU update.
 		auto& tagList = this->getTagListByLevel(level);
 		auto& plru = this->getPLRUByLevel(level);
 
 		auto itTag = std::find(tagList.begin(), tagList.end(), aligned);
 		if (itTag != tagList.end()) {
 			size_t idx = std::distance(tagList.begin(), itTag);
-			plru.access(idx);  // 表示此 entry 被访问，刷新路径
+			plru.access(idx);  // This entry is accessed, refresh the path.
 		}
 // -----------
 
 
-        // 统计命中
+        // Track the hit statistics.
         //++globalMPTCache->mptCacheL1Misses;
         if (level == 0) ++globalMPTCache->mptCacheL0Hits;
         else if (level == 1) ++globalMPTCache->mptCacheL1Hits;
@@ -497,14 +499,14 @@ void MPTCache52::fetchDelayed(
         else if (level == 3) ++globalMPTCache->mptCacheL3Hits;
         else ++globalMPTCache->mptCacheSPHits;
 
-        // 异步回调：延迟 10 cycle 执行 callback(true, entry)    
+        // Asynchronous callback: Delay 10 cycles to execute `callback(true, entry)`.
         curEventQueue()->schedule(
             new gem5::EventFunctionWrapper(
                 [=]() {
-                    callback(true, entry); // true 表示命中
+                    callback(true, entry); // `true` indicates a hit.
                 },
-                "mptcache.fetchDelayed_hit", // 事件名
-                true  // 自动释放
+                "mptcache.fetchDelayed_hit", // event name
+                true  // release
             ),
             curTick() + delay
         );
@@ -512,7 +514,8 @@ void MPTCache52::fetchDelayed(
 
 
     } else {
-        // 未命中：调用 mpt.walkDelayed() 模拟完整页表访问延迟
+        // Miss: Call `mpt.walkDelayed()` to simulate the full page table access delay.
+
         mpt.walkDelayed(pa, tc, pma, pmp, 
             [=](MPTE52 mpte) {
                 if (!mpte.isValid()) {
@@ -520,14 +523,14 @@ void MPTCache52::fetchDelayed(
                     return;
                 }
 
-                // 插入缓存
-                auto& table_mut = this->getTableByLevel(level);//获取当前层级（L0/L1/L2/L3/SP）对应的缓存表（map）
-                size_t& cap = this->getCapacityByLevel(level);//获取当前层级对应 cache 的最大容量限制
+                // Insert into cache.
+                auto& table_mut = this->getTableByLevel(level);//Retrieve the cache table (map) corresponding to the current level (L0/L1/L2/L3/SP).
+                size_t& cap = this->getCapacityByLevel(level);//Retrieve the maximum capacity limit of the cache corresponding to the current level.
 
 
-//PLRU 替换
-				auto& tagList = this->getTagListByLevel(level);//获取当前层级用于记录 entry 顺序的 tag 列表（vector）
-				auto& plru = this->getPLRUByLevel(level);//获取当前层级的 PLRU 树，用于决定 victim 替换哪一项、刷新访问路径
+//PLRU 
+				auto& tagList = this->getTagListByLevel(level);//Retrieve the tag list (vector) used to record the entry order for the current level.
+				auto& plru = this->getPLRUByLevel(level);//Retrieve the PLRU tree for the current level, used to determine which victim to replace and refresh the access path.
 
 				if (table_mut.size() >= cap) {
 					size_t victimIdx = plru.getVictim();
@@ -542,14 +545,14 @@ void MPTCache52::fetchDelayed(
 // -----------
 
 
-/*随机替换
+/*random replacement
                 if (table_mut.size() >= cap) {
                     auto randomIt = std::next(table_mut.begin(), rand() % table_mut.size());
                     table_mut.erase(randomIt);
                 }
 */
 				
-/* 另一种实现方式
+/* another implementation
                 auto& table_mut = const_cast<MPTCache52*>(this)->getTableByLevel(level);
                 size_t& cap = const_cast<MPTCache52*>(this)->getCapacityByLevel(level);
                 if (table_mut.size() >= cap) {
@@ -560,7 +563,7 @@ void MPTCache52::fetchDelayed(
 
 				uint64_t regionSize = getRegionSizeForLevel(level);
 				if (mpte.getN()) {
-					regionSize *= 512;  // napot 模式，等效区域放大
+					regionSize *= 512;  // napot, Equivalent region expansion.
 				}
 
 				MPTCacheEntry entry = {
@@ -569,7 +572,7 @@ void MPTCache52::fetchDelayed(
 
                 table_mut[aligned] = entry;
 
-                // 统计未命中
+                // miss
                 if (level == 0) ++globalMPTCache->mptCacheL0Misses;
                 else if (level == 1) ++globalMPTCache->mptCacheL1Misses;
                 else if (level == 2) ++globalMPTCache->mptCacheL2Misses;
@@ -827,17 +830,17 @@ TLB::lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
         if (entry)
             entry->lruSeq = nextSeq();
 
-        // 增加 ITLB 和 DTLB 的区分统计
+        // Add separate statistics for ITLB and DTLB.
         if (mode == BaseMMU::Execute) {
-            // Instruction TLB 统计
-            //stats.iTLBAccesses++; 不需要这个，access 会自动被计算，而且 formula 格式也不支持++
+            // Instruction TLB 
+            //stats.iTLBAccesses++; No need for this, as access will be automatically calculated, and the formula format does not support `++`.
             if (!entry)
                 stats.iTLBMisses++;
             else
                 stats.iTLBHits++;
         }
         else if (mode == BaseMMU::Write) {
-            // Data TLB 写
+            // Data TLB W
             stats.writeAccesses++;
             if (!entry)
                 stats.writeMisses++;
@@ -845,7 +848,7 @@ TLB::lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
                 stats.writeHits++;
         }
         else {
-            // Data TLB 读
+            // Data TLB R
             stats.readAccesses++;
             if (!entry)
                 stats.readMisses++;
@@ -876,7 +879,8 @@ TLB::lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
     return entry;
 }
 
-/*原来的（增加 ITLB 和 DTLB 的区分统计之前的）：
+/*The previous version (before adding separate statistics for ITLB and DTLB):
+
         if (mode == BaseMMU::Write)
             stats.writeAccesses++;
         else
@@ -1727,14 +1731,18 @@ TLB::L2TLBCheck(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode, Addr
             }
 
             
-                // 插入 MPT 权限检查。位置在所有其他 fault 检查通过之后。其他 fault 包括：
-                //checkPermissions(...) == NoFault
-                //大页合法性校验通过
-                // a、d 校验通过
+                /* 
+                Insert MPT permission check. This occurs after all other fault checks pass. Other faults include:
+
+                * `checkPermissions(...) == NoFault`
+                * Large page legality check passes
+                * A/D checks pass
+
+                */
             if (fault == NoFault) {
                 Addr paddr = (pte.ppn << PageShift) | (vaddr & mask(getPageShiftForLevel(level)));
 
-			//获取tc 和 translation
+			//get tc and translation
             
                 auto it = gem5::RiscvISA::mptContextMap.find(req.get());
                 assert(it != gem5::RiscvISA::mptContextMap.end());
@@ -1750,7 +1758,7 @@ TLB::L2TLBCheck(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode, Addr
 				BaseMMU::Translation *translation = mptState->translation;
 */				
 				
-				//直接调用异步权限检查
+				//Directly call the asynchronous permission check.
 				checkMPTPermissionFunctionInTLBcc(
 					nullptr,  
 					vaddr,
@@ -1767,10 +1775,16 @@ TLB::L2TLBCheck(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode, Addr
 				#endif
 				);
 
-				// 不提前 return，统一风格：继续走向 return fault
+				// Do not return prematurely, maintain a consistent style: continue towards returning the fault.
 				fault = NoFault;
 
-			} else { //else对应的情况只是一个中间页表的指针页，不能直接转换出物理地址，不需要调用 checkPermissions(...)，不需要做 MPT 权限检查
+			} else { /*
+ The `else` case corresponds to a pointer page of an intermediate page table,
+  which cannot directly convert to a physical address. Therefore,
+ there's no need to call `checkPermissions(...)` or perform MPT permission checks.
+                
+                
+                */
 				level--;
 				if (level < 0) {
 					hitInSp = true;
@@ -1926,15 +1940,16 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
 			#endif
 			);
 			
-			//异步检查 → 提前退出，结果交由 translation->finish() 处理
+			//Asynchronous check → Exit early, and delegate the result handling to `translation->finish()`.
 			return std::make_pair(hit_type, NoFault);
 			
 			/*
-            else { // MPT check 的优先级是低于checkPermissionsd的
-                // 这里的逻辑是：如果checkPermissions通过了，才会去检查MPT权限
+            else { // The priority of the MPT check is lower than that of `checkPermissions`.
+                    The logic here is: MPT permissions will only be checked if `checkPermissions` passes.
+
                 auto [mpt_result, mpt_fault] = checkMPTPermissionFunctionInTLBcc(
-                    e[0], vaddr,//这里的依据是if ((vpn == 0 || (vpn & mask) == (tlb[i].vaddr & mask)) && (asid == 0 || tlb[i].asid == asid)) remove(i);
-                    e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes)), //这里的依据是paddr = e_l2tlb->paddr << PageShift | (vaddr & mask(e_l2tlb->logBytes));
+                    e[0], vaddr,//reference:  if ((vpn == 0 || (vpn & mask) == (tlb[i].vaddr & mask)) && (asid == 0 || tlb[i].asid == asid)) remove(i);
+                    e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes)), //reference:  paddr = e_l2tlb->paddr << PageShift | (vaddr & mask(e_l2tlb->logBytes));
                     mode
                     #if MPT_ENABLED
                         , globalMPT
@@ -1945,7 +1960,7 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
                 );
             
                 if (mpt_fault != NoFault) {
-                    return std::make_pair(hit_type, mpt_fault);  // MPT 不通过
+                    return std::make_pair(hit_type, mpt_fault);  // MPT  not passed.
                 }
             } */
 
@@ -1971,7 +1986,7 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
 			#endif
 			);
 
-			//当前函数挂起，等 finish 回调
+			//The current function is suspended, waiting for the `finish` callback.
 			return std::make_pair(hit_type, NoFault);
 			/*
 			auto [mpt_result, mpt_fault] = checkMPTPermissionFunctionInTLBcc(
@@ -2025,7 +2040,7 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
                 }
                 
                 else {
-                    //MPT 权限检查
+                    //MPT Permission check.
                     Addr paForMPTCheck = e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
             
 					checkMPTPermissionFunctionInTLBcc(
@@ -2039,7 +2054,7 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
 					#endif
 					);
 
-					//当前函数退出，等待 finish 异步恢复
+					//The current function exits, waiting for the `finish` to asynchronously resume.
 					return std::make_pair(hit_type, NoFault);
 					
 					
@@ -2082,7 +2097,7 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
                 }
                 
                 else {
-                    // MPT 权限检查
+                    // MPT Permission check.
                     Addr paForMPTCheck = e[0]->paddr << PageShift | (gPaddr & mask(e[0]->logBytes));
                     
 					checkMPTPermissionFunctionInTLBcc(
@@ -2096,7 +2111,7 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
 					#endif
 					);
 
-					//当前翻译挂起，等待 translation->finish() 恢复
+					//The current translation is suspended, waiting for `translation->finish()` to resume.
 					return std::make_pair(hit_type, NoFault);
 					
 					
@@ -2209,7 +2224,7 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                 hit_type = h_l2GstageHitEnd;
 
                 
-                // 插入 MPT 权限检查
+                // Insert MPT permission check.
                 Addr paForMPTCheck = e[0]->paddr << PageShift | (gPaddr & mask(e[0]->logBytes));
                 
 				checkMPTPermissionFunctionInTLBcc(
@@ -2329,7 +2344,9 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                         req->setTwoPtwWalk(true, level, twoStageLevel--, e[0]->pte.ppn, hitInSp);
                         req->setgPaddr(gPaddr);
                         return std::make_pair(hit_type, fault);
-                    //这个分支确实不需要MPT权限检查，MPT 依据的物理地址 paForMPTCheck 还未确定
+                    //This branch indeed doesn't require the MPT permission check, 
+                    //as the physical address `paForMPTCheck` that MPT relies on has not been determined yet.
+
                     } else {
                         hit_type = h_l2GstageHitEnd;
 
@@ -2337,7 +2354,7 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
 
 
                         
-                        //插入 MPT 权限检查
+                        //Insert MPT permission check.
                         Addr paForMPTCheck = e[0]->paddr << PageShift | (gPaddr & mask(e[0]->logBytes));
                         
 						checkMPTPermissionFunctionInTLBcc(
@@ -2716,7 +2733,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
         fault = checkPermissions(status, pmode, vaddr, mode, e[0]->pte, 0, false);
 
         
-        // 追加 MPT 权限检查
+        // Insert MPT permission check.
         if (fault == NoFault) {
             Addr paForMPTCheck = (e[0]->paddr << PageShift) | (vaddr & mask(e[0]->logBytes));
             
@@ -2986,18 +3003,25 @@ TLB::translateTiming(const RequestPtr &req, ThreadContext *tc,
     bool delayed;
     assert(translation);
 
-    // 设置全局上下文映射
+    // Set the global context mapping.
     gem5::RiscvISA::mptContextMap[req.get()] = std::make_pair(tc, translation);
     
     Fault fault = translate(req, tc, translation, mode, delayed);
     if (!delayed){
         translation->finish(fault, req, tc, mode);
-        // 可选：请求结束后清理上下文
+        // Optional: Clean up the context after the request ends.
         //gem5::RiscvISA::mptContextMap.erase(req.get());
     }
     else
         translation->markDelayed();
-        // 延迟时不要清理，否则后续异步 finish 时拿不到上下文//可以在 BaseMMU::Translation::finish() 的实现末尾加一行gem5::RiscvISA::mptContextMap.erase(req.get());确保延迟路径也能正确清理。
+        /*
+        Do not clean up during the delay, as the context will not be accessible during the subsequent asynchronous `finish`.
+        You can add a line at the end of the `BaseMMU::Translation::finish()` implementation:
+                `gem5::RiscvISA::mptContextMap.erase(req.get());`
+        This ensures that the context is correctly cleaned up even in the delayed path.
+    
+        */
+        
 
 }
 
@@ -3288,7 +3312,7 @@ TLB::TlbStats::TlbStats(statistics::Group *parent)
                mptTotalMisses / mptTotalAccesses),
 
 	   
-		// I/D tlb miss/hit  -->mpt miss/hit	   为了计算总latency
+		// I/D tlb miss/hit  -->mpt miss/hit	   To calculate the total latency.
 			   
 		ADD_STAT(iTLBMisses, statistics::units::Count::get(), "Instruction TLB misses"),
 		ADD_STAT(iTLBHits, statistics::units::Count::get(), "Instruction TLB hits"),
@@ -3325,9 +3349,9 @@ TLB::TlbStats::TlbStats(statistics::Group *parent)
 /*
 void TLB::regStats()
 {
-    BaseTLB::regStats();  // 调用父类的统计注册逻辑
+    BaseTLB::regStats();  // Call the parent class's statistics registration logic.
 
-    // 绑定 MPT 多级统计数据到 globalMPTCache（必须是指针）
+    // Bind the multi-level MPT statistics data to `globalMPTCache` (must be a pointer).
     stats.mptL0Hits.dataPtr(&globalMPTCache->mptCacheL0Hits);
     stats.mptL0Misses.dataPtr(&globalMPTCache->mptCacheL0Misses);
 
@@ -3379,16 +3403,17 @@ inline int TLB::getLevelForPageSizeLog2(uint8_t logBytes) {
 
 
 /*
- 检查某个 TLB entry 对应的 MPT 权限是否允许当前操作。
- 优先使用 entry 自带的 mptInfo。若不可信，访问 MPTCache 获取真实权限
- 填回 tlbEntry.mptInfo，但不再重复 trust
- int用于记录结果的类型（0表示没有fault，直接击中mptinfoInTLB，
- 1表示没有fault但是mptinfoInTLB的trust没有满足，去mptcache或mpt中找到了，
- 2 reserved
- 3mpt中也没有找到，寻找失败  
- 4表示level<0是无效页大小
- 5 mpt机制没有打开
- */
+Check if the MPT permissions corresponding to a TLB entry allow the current operation.
+First, use the mptInfo that comes with the entry. If it's not trustworthy, access MPTCache to get the real permissions.
+Fill back `tlbEntry.mptInfo`, but do not trust it again.
+The `int` is used to record the result type:
+- 0: No fault, directly hit mptinfoInTLB.
+- 1: No fault, but the trust of mptinfoInTLB was not satisfied, found it in MPTCache or MPT.
+- 2: Reserved.
+- 3: Not found in MPT, search failed.
+- 4: Invalid page size for level < 0.
+- 5: MPT mechanism is not enabled.
+*/
 
 
 //std::pair<int, Fault>
@@ -3407,18 +3432,18 @@ TLB::checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMP
 {
 #if !MPT_ENABLED
 
-    // 情况 1：MPT 完全禁用，视为永远允许访问
+    // 1：MPT is completely disabled, treated as always allowing access.
     //return {5, NoFault};
 	translation->finish(NoFault, req, tc, mode);
     return;
 
 #elif MPT_ENABLED && MPT_CACHE_ENABLED
 
-    // 情况 2：启用 MPT + Cache（默认路径）
+    // 2：Enable MPT + Cache (default path).
     const MPTInfoInTLB& mptInfo = entry->mptInfo;
     const uint8_t tlbLogBytes = entry->logBytes;
 
-    // Case 0: MPTInfo 在 TLB 中是可信的
+    // Case 0: MPTInfo in the TLB is trustworthy.
     if (mptInfo.mptinfoTrust(tlbLogBytes)) {
         bool hasPerm = false;
         switch (mode) {
@@ -3439,16 +3464,16 @@ TLB::checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMP
 			
     }
 
-    // Case 1: 不可信，推导 MPT 层级
+    // Case 1: Not trustworthy, derive the MPT hierarchy.
     int level = getLevelForPageSizeLog2(tlbLogBytes);
     if (level < 0) {
-        //return {4, createMPTPagefault(vaddr, paForMPTCheck, mode)}; // 无效页大小
+        //return {4, createMPTPagefault(vaddr, paForMPTCheck, mode)}; // Invalid page size.
         DPRINTF(TLB, "Invalid page size → [path=4] vaddr=%#lx\n", vaddr);
         translation->finish(createMPTPagefault(vaddr, paForMPTCheck, mode), req, tc, mode);
         return;		
     }
 
-    // Case 2: 查找 MPTCache。异步 fetch，命中/未命中都延迟
+    // Case 2: Search MPTCache. Asynchronous fetch, with delay for both hit and miss.
 	
     MPTCacheEntry cacheEntry;
 	
@@ -3462,13 +3487,19 @@ TLB::checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMP
 	
 			/*
 			if (!globalMPTCache->fetch(paForMPTCheck, level, globalMPT, cacheEntry)) { 
-			//if (!globalMPTCache.fetch(paForMPTCheck, level, globalMPT, cacheEntry)) {  //fetch 参数中的&entry是调用者传入的空壳对象，由函数内部填充内容返回出去。先MPTCacheEntry cacheEntry; 声明一个临时变量,fetch()内部会自动填写它
-				//这个填进去的的临时变量，用来：提取 mpte.perms()；生成 offset；更新 TLBEntry::mptInfo 等
+			//if (!globalMPTCache.fetch(paForMPTCheck, level, globalMPT, cacheEntry)) {  
+                The `&entry` in the fetch parameters is an empty object passed by the caller, which will be populated and returned by the function. First, declare a temporary variable `MPTCacheEntry cacheEntry;`, which will be automatically filled inside `fetch()`.
+                    This filled temporary variable is used to:
+
+                    * Extract `mpte.perms()`
+                    * Generate the offset
+                    * Update `TLBEntry::mptInfo`, etc.
+
 				return {3, createMPTPagefault(vaddr, paForMPTCheck, mode)}; // cache 和 walk 都失败
 			}*/
 
 			
-			// Case 3: 成功，计算 offset 和权限；回填 TLB 的 mptInfo；提取权限
+			// Case 3: Success, calculate the offset and permissions; fill back the TLB's `mptInfo`; extract the permissions.
 			Addr offset = paForMPTCheck - cacheEntry.tag;
 			uint64_t regionSizeAfterN = getRegionSizeForLevel(level);
 			if (cacheEntry.mpte.getN()) {
@@ -3476,7 +3507,7 @@ TLB::checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMP
 			}
 			uint8_t log2RegionSize = log2floor(regionSizeAfterN);
 			
-			// 构造虚拟 cache entry 供 fromEntry 使用
+			// Construct a virtual cache entry for use in `fromEntry`.
 			MPTCacheEntry fakeEntry = {
 				.tag = MPTCacheEntry::regionAlignStatic(paForMPTCheck, level),//
 				.mpte = cacheEntry.mpte,
@@ -3488,7 +3519,7 @@ TLB::checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMP
 
 
 			uint8_t pi = (offset >> getPageShiftForLevel(level)) & 0xF;
-			uint8_t perm = cacheEntry.mpte.perms(pi); //// 这个就够了，内部已自动处理 napot
+			uint8_t perm = cacheEntry.mpte.perms(pi); //// This is sufficient, as the napot is already handled automatically internally.
 			bool hasPerm = false;
 
 			switch (mode) {
@@ -3510,11 +3541,11 @@ TLB::checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMP
 
 #elif MPT_ENABLED && !MPT_CACHE_ENABLED
 
-    // 情况 3：启用 MPT，但禁用 Cache，直接 walk
+    // 3：Enable MPT, but disable Cache, perform a direct walk.
     const MPTInfoInTLB& mptInfo = entry->mptInfo;
     const uint8_t tlbLogBytes = entry->logBytes;
 
-    // Case 0: TLB 中已有可信 MPT 信息
+    // Case 0: The TLB already contains trustworthy MPT information.
     if (mptInfo.mptinfoTrust(tlbLogBytes)) {
         bool hasPerm = false;
         switch (mode) {
@@ -3535,7 +3566,7 @@ TLB::checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMP
 		
     }
 
-    // Case 1。推导页粒度
+    // Case 1。Derive the page granularity.
     int level = getLevelForPageSizeLog2(tlbLogBytes);
     if (level < 0){
         //return {4, createMPTPagefault(vaddr, paForMPTCheck, mode)};
@@ -3546,7 +3577,7 @@ TLB::checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMP
 	
 	
 	
-    // Case 2。在这里手动 walk 并构造 MPTInfoInTLB，
+    // Case 2。Manually walk here and construct the MPTInfoInTLB.
     //MPTE52 mpte = globalMPT.walk(paForMPTCheck);
 	mpt.walkDelayed(paForMPTCheck, tc, pma, pmp,[=](MPTE52 mpte) {
 		if (!mpte.isValid()) {
@@ -3556,31 +3587,31 @@ TLB::checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMP
 			return;
 			}
 		
-		// regionBase 不需要乘系数，仅对齐
+		// regionBase: No need to multiply by a coefficient, just align.
 		Addr regionBase = paForMPTCheck  & ~(getRegionSizeForLevel(level) - 1);
 		Addr offset = paForMPTCheck  - regionBase;
 
-		//perms(pi) 已封装了N的判断逻辑
+		//perms(pi): The logic for checking N has been encapsulated.
 		uint8_t pi = (offset >> getPageShiftForLevel(level)) & 0xF;
 		uint8_t perm = mpte.perms(pi);
 
-		//napot 模式下权限粒度扩大，需乘以 512
+		//napot: In the mode, the permission granularity is expanded, requiring multiplication by 512.
 		uint64_t regionSizeAfterrN = getRegionSizeForLevel(level);
 		if (mpte.getN()) {
 			regionSizeAfterrN *= 512;
 		}
 		uint8_t log2RegionSize = log2floor(regionSizeAfterrN);
 		
-		//回填 mptInfo//这段逻辑是在 127 cycle 之后被 schedule 执行	
+		//Fill back the `mptInfo` // This logic is scheduled to execute after 127 cycles.
 		entry->mptInfo.raw = 0;
 		entry->mptInfo.raw.valid(1);
 		entry->mptInfo.raw.perm_r((perm & MPT_PERM_R) != 0);
 		entry->mptInfo.raw.perm_w((perm & MPT_PERM_W) != 0);
 		entry->mptInfo.raw.perm_x((perm & MPT_PERM_X) != 0);
-		entry->mptInfo.raw.napot(mpte.getN());  // 显式标记 napot
+		entry->mptInfo.raw.napot(mpte.getN());  // Explicitly mark napot.
 		entry->mptInfo.raw.mptLogBytes(log2RegionSize);
 
-		// 权限判断
+		// Permission check.
 		bool hasPerm = false;
 		switch (mode) {
 			case BaseMMU::Read:    hasPerm = perm & MPT_PERM_R; break;
@@ -3606,7 +3637,7 @@ TLB::checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMP
 	
 	
 
-    // 提前 return（等待 finish 回调）
+    // Return early (waiting for the `finish` callback).
     return;
 	
 	
