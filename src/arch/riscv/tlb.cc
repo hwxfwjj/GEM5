@@ -3435,7 +3435,7 @@ checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMPTChec
         else
             return {0, createMPTPagefault(vaddr, paForMPTCheck, mode)};
 		*/
-        Fault fault = hasPerm ? NoFault : createMPTPagefault(vaddr, paForMPTCheck, mode);
+        Fault fault = hasPerm ? NoFault : TLB::createMPTPagefault(vaddr, paForMPTCheck, mode);
         translation->finish(fault, req, tc, mode);
         return;		
 			
@@ -3458,7 +3458,7 @@ checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMPTChec
         [=](bool hit, MPTCacheEntry cacheEntry) {
             if (!cacheEntry.valid) {
                 DPRINTF(TLB, "MPTCache fetch failed → [path=3] vaddr=%#lx\n", vaddr);
-                translation->finish(createMPTPagefault(vaddr, paForMPTCheck, mode), req, tc, mode);
+                translation->finish(TLB::createMPTPagefault(vaddr, paForMPTCheck, mode), req, tc, mode);
                 return;
             }
 	
