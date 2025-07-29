@@ -3397,8 +3397,8 @@ inline int getLevelForPageSizeLog2(uint8_t logBytes) {
 void
 checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMPTCheck, BaseMMU::Mode mode,
     ThreadContext *tc,
-    Translation *translation,
-    RequestPtr req
+    gem5::BaseMMU::Translation *translation,
+    gem5::RequestPtr req
  #if MPT_ENABLED
      , const MPT& mpt
    #if MPT_CACHE_ENABLED
@@ -3424,9 +3424,9 @@ checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMPTChec
     if (mptInfo.mptinfoTrust(tlbLogBytes)) {
         bool hasPerm = false;
         switch (mode) {
-            case BaseMMU::Read:    hasPerm = mptInfo.perm_r; break;
-            case BaseMMU::Write:   hasPerm = mptInfo.perm_w; break;
-            case BaseMMU::Execute: hasPerm = mptInfo.perm_x; break;
+            case BaseMMU::Read:    hasPerm = mptInfo.raw.perm_r; break;
+            case BaseMMU::Write:   hasPerm = mptInfo.raw.perm_w; break;
+            case BaseMMU::Execute: hasPerm = mptInfo.raw.perm_x; break;
             default: break;
         }
 		/*
