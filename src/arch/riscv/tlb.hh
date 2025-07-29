@@ -418,8 +418,8 @@ class TLB : public BaseTLB
         statistics::Formula iTLBMissRate;
 
         // Data TLB
-        statistics::Scalar dTLBMisses;
-        statistics::Scalar dTLBHits;
+        statistics::Formula dTLBMisses;// formula not scalar
+        statistics::Formula dTLBHits;
         statistics::Formula dTLBAccesses;
         statistics::Formula dTLBMissRate;
 

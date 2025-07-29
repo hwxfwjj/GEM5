@@ -831,7 +831,7 @@ TLB::lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
         // 增加 ITLB 和 DTLB 的区分统计
         if (mode == BaseMMU::Execute) {
             // Instruction TLB 统计
-            stats.iTLBAccesses++;
+            //stats.iTLBAccesses++; 不需要这个，access 会自动被计算，而且 formula 格式也不支持++
             if (!entry)
                 stats.iTLBMisses++;
             else
