@@ -172,6 +172,12 @@ struct MPTCacheEntry
     //让 cache entry 自带粒度信息
     int level = -1;
     uint8_t log2RegionSize = 0;   //C++ 的 uint8_t 是8-bit
+
+     // 静态函数来实现对齐功能
+    static Addr regionAlignStatic(Addr pa, int level) {
+        // 调用与 MPTCache52::regionAlign 相同的逻辑
+        return pa & ~(getRegionSizeForLevel(level) - 1);
+    }
 };
 #endif //MPT_CACHE_ENABLED
 

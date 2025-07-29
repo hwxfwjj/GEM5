@@ -102,7 +102,11 @@ class ThreadContext;
    simply create an ITLB and DTLB that will point to the real TLB */
 namespace RiscvISA {
 
-/* depracated
+
+
+#if MPT_ENABLED
+
+/* depracated implementation
 struct MPTSenderState : public Packet::SenderState {
     ThreadContext *tc;
     BaseMMU::Translation *translation;
@@ -111,10 +115,7 @@ struct MPTSenderState : public Packet::SenderState {
         : tc(tc_), translation(tr_) {}
 };
 */
-
-#if MPT_ENABLED
-
-
+//new implementation
 extern std::unordered_map<const Request*, std::pair<ThreadContext*, BaseMMU::Translation*>> mptContextMap;
 
 
