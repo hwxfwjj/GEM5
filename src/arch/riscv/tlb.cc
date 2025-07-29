@@ -3247,7 +3247,7 @@ TLB::TlbStats::TlbStats(statistics::Group *parent)
                "Total TLB (read and write) accesses",
                readAccesses + writeAccesses),
 			   
-			   //JJW
+			   //mpt
       ADD_STAT(mptL0Hits, statistics::units::Count::get(), "MPT L0 hits"),
       ADD_STAT(mptL0Misses, statistics::units::Count::get(), "MPT L0 misses"),
       ADD_STAT(mptL0Accesses, statistics::units::Count::get(), "MPT L0 accesses", mptL0Hits + mptL0Misses),
@@ -3324,7 +3324,7 @@ TLB::TlbStats::TlbStats(statistics::Group *parent)
 }
 
 
-
+/*
 void TLB::regStats()
 {
     BaseTLB::regStats();  // 调用父类的统计注册逻辑
@@ -3345,7 +3345,7 @@ void TLB::regStats()
     stats.mptSPHits.dataPtr(&globalMPTCache->mptCacheSPHits);
     stats.mptSPMisses.dataPtr(&globalMPTCache->mptCacheSPMisses);
 }
-
+*/
 
 
 

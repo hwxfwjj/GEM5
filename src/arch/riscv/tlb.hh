@@ -428,7 +428,7 @@ class TLB : public BaseTLB
 
     } stats;
     
-    void regStats() override; 
+    //void regStats() override; 
 
   public:
     PMAChecker *pma;
