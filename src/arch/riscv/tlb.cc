@@ -3454,7 +3454,7 @@ TLB::checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMP
 	
     MPTCacheEntry cacheEntry;
 	
-	cache->fetchDelayed(paForMPTCheck, level, globalMPT, tc, pma, pmp
+	cache->fetchDelayed(paForMPTCheck, level, globalMPT, tc, pma, pmp, 
         [=](bool hit, MPTCacheEntry cacheEntry) {
             if (!cacheEntry.valid) {
                 DPRINTF(TLB, "MPTCache fetch failed → [path=3] vaddr=%#lx\n", vaddr);
