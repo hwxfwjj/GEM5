@@ -79,8 +79,7 @@ using namespace RiscvISA;
 
 #if MPT_ENABLED
 
-
-std::unordered_map<const Request*, std::pair<ThreadContext*, BaseMMU::Translation*>> mptContextMap;
+std::unordered_map<const Request*, std::pair<ThreadContext*, BaseMMU::Translation*>> gem5::RiscvISA::mptContextMap;
 
 
 MPT::MPT() : nextPPN(0x10000) {
