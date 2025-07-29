@@ -3368,7 +3368,7 @@ TLB::getTableWalkerPort()
 
 
 #if MPT_ENABLED
-inline int getLevelForPageSizeLog2(uint8_t logBytes) {
+inline int TLB::getLevelForPageSizeLog2(uint8_t logBytes) {
     switch (logBytes) {
         case 12: return 0; // 4KB
         case 21: return 1; // 2MB
@@ -3395,7 +3395,7 @@ inline int getLevelForPageSizeLog2(uint8_t logBytes) {
 
 //std::pair<int, Fault>
 void
-checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMPTCheck, BaseMMU::Mode mode,
+TLB::checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMPTCheck, BaseMMU::Mode mode,
     ThreadContext *tc,
     gem5::BaseMMU::Translation *translation,
     gem5::RequestPtr req
@@ -3435,7 +3435,7 @@ checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMPTChec
         else
             return {0, createMPTPagefault(vaddr, paForMPTCheck, mode)};
 		*/
-        Fault fault = hasPerm ? NoFault : TLB::createMPTPagefault(vaddr, paForMPTCheck, mode);
+        Fault fault = hasPerm ? NoFault : createMPTPagefault(vaddr, paForMPTCheck, mode);
         translation->finish(fault, req, tc, mode);
         return;		
 			
@@ -3446,7 +3446,7 @@ checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMPTChec
     if (level < 0) {
         //return {4, createMPTPagefault(vaddr, paForMPTCheck, mode)}; // 无效页大小
         DPRINTF(TLB, "Invalid page size → [path=4] vaddr=%#lx\n", vaddr);
-        translation->finish(TLB::createMPTPagefault(vaddr, paForMPTCheck, mode), req, tc, mode);
+        translation->finish(createMPTPagefault(vaddr, paForMPTCheck, mode), req, tc, mode);
         return;		
     }
 
@@ -3458,7 +3458,7 @@ checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMPTChec
         [=](bool hit, MPTCacheEntry cacheEntry) {
             if (!cacheEntry.valid) {
                 DPRINTF(TLB, "MPTCache fetch failed → [path=3] vaddr=%#lx\n", vaddr);
-                translation->finish(TLB::createMPTPagefault(vaddr, paForMPTCheck, mode), req, tc, mode);
+                translation->finish(createMPTPagefault(vaddr, paForMPTCheck, mode), req, tc, mode);
                 return;
             }
 	
@@ -3505,7 +3505,7 @@ checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMPTChec
 			else
 				return {1, createMPTPagefault(vaddr, paForMPTCheck, mode)};
 		*/
-			Fault fault = hasPerm ? NoFault : TLB::createMPTPagefault(vaddr, paForMPTCheck, mode);
+			Fault fault = hasPerm ? NoFault : createMPTPagefault(vaddr, paForMPTCheck, mode);
 			translation->finish(fault, req, tc, mode);
         }
     );
