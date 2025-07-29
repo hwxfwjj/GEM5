@@ -52,7 +52,7 @@
 // 是否启用 MPT Cache（默认启用，使用 -D__ARCH_RISCV_MMU_MPT_CACHE_HH__ 禁用），前提是 MPT 启用																													
 //#if MPT_ENABLED && !defined(__ARCH_RISCV_MMU_MPT_CACHE_HH__)
 #define MPT_CACHE_ENABLED 1
-//#include "params/RiscvTLB.hh" //JJW2
+//#include "params/RiscvTLB.hh" 
 //#else
 //#define MPT_CACHE_ENABLED 0
 //#endif

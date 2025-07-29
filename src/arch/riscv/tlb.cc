@@ -815,7 +815,7 @@ TLB::l2TLBEvictLRU(int l2TLBlevel, Addr vaddr)
 
 
 
-//JJW
+
 
 TlbEntry *
 TLB::lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
@@ -1726,7 +1726,7 @@ TLB::L2TLBCheck(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode, Addr
                 }
             }
 
-            //JJW:
+            
                 // 插入 MPT 权限检查。位置在所有其他 fault 检查通过之后。其他 fault 包括：
                 //checkPermissions(...) == NoFault
                 //大页合法性校验通过
@@ -1910,7 +1910,7 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
             if (fault != NoFault) {
                 return std::make_pair(hit_type, fault);
             }
-            //JJW:
+            
 			
 			
 			Addr paForMPTCheck = e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
@@ -1956,7 +1956,7 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
         if (fault != NoFault) {
             return std::make_pair(hit_type, fault);
         }
-        //JJW:
+        
         else {
             Addr paForMPTCheck = e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
             
@@ -2023,7 +2023,7 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
                 if (fault != NoFault) {
                     return std::make_pair(hit_type, fault);
                 }
-                //JJW:
+                
                 else {
                     //MPT 权限检查
                     Addr paForMPTCheck = e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
@@ -2080,7 +2080,7 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
                 if (fault != NoFault) {
                     return std::make_pair(hit_type, fault);
                 }
-                //JJW:
+                
                 else {
                     // MPT 权限检查
                     Addr paForMPTCheck = e[0]->paddr << PageShift | (gPaddr & mask(e[0]->logBytes));
@@ -2208,7 +2208,7 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
             } else {
                 hit_type = h_l2GstageHitEnd;
 
-                //JJW:
+                
                 // 插入 MPT 权限检查
                 Addr paForMPTCheck = e[0]->paddr << PageShift | (gPaddr & mask(e[0]->logBytes));
                 
@@ -2241,7 +2241,7 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                     return std::make_pair(hit_type, mpt_fault);
                 }*/
 
-                //:JJW
+                
 
                 if (e[0]->level > 0) {
                     pg_mask = (1ULL << (12 + 9 * e[0]->level)) - 1;
@@ -2336,7 +2336,7 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                         uint64_t gpaddr_past = gPaddr;
 
 
-                        //JJW:
+                        
                         //插入 MPT 权限检查
                         Addr paForMPTCheck = e[0]->paddr << PageShift | (gPaddr & mask(e[0]->logBytes));
                         
@@ -2368,8 +2368,7 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                         if (mpt_fault != NoFault) {
                             return std::make_pair(hit_type, mpt_fault);
                         } */
-                        //:JJW
-
+                        
 
 
 
@@ -2716,7 +2715,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                 req->getPC(), mode, e[0]->pte.d);
         fault = checkPermissions(status, pmode, vaddr, mode, e[0]->pte, 0, false);
 
-        //JJW:
+        
         // 追加 MPT 权限检查
         if (fault == NoFault) {
             Addr paForMPTCheck = (e[0]->paddr << PageShift) | (vaddr & mask(e[0]->logBytes));
@@ -2748,7 +2747,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                 return mpt_fault;
             }*/
         }
-        //:JJW
+        
 
     }
 
@@ -3363,7 +3362,7 @@ TLB::getTableWalkerPort()
 
 
 
-//JJW
+
 
 
 #if MPT_ENABLED

@@ -78,7 +78,7 @@
 // 是否启用 MPT Cache（默认启用，使用 -D__ARCH_RISCV_MMU_MPT_CACHE_HH__ 禁用），前提是 MPT 启用																													
 //#if MPT_ENABLED && !defined(__ARCH_RISCV_MMU_MPT_CACHE_HH__)
 #define MPT_CACHE_ENABLED 1
-//#include "params/RiscvTLB.hh" //JJW2
+//#include "params/RiscvTLB.hh" //
 //#else
 //#define MPT_CACHE_ENABLED 0
 //#endif
@@ -157,7 +157,7 @@ class MPTCache52 {
     size_t capacityL3;
     size_t capacitySP;
 
-	  static int configuredSize;//JJW2  用来存 param 传进来的值（类全局共享）
+	  static int configuredSize;//  用来存 param 传进来的值（类全局共享）
 	
     std::unordered_map<Addr, MPTCacheEntry> table;
 	
