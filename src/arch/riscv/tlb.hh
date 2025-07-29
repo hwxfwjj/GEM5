@@ -60,7 +60,7 @@
 #include "cpu/base.hh"
 #include "params/RiscvTLB.hh"
 #include "sim/sim_object.hh"
-
+#include "mem/packet.hh"//SenderState
 
 
 
@@ -101,6 +101,7 @@ class ThreadContext;
    simply create an ITLB and DTLB that will point to the real TLB */
 namespace RiscvISA {
 
+/* depracated
 struct MPTSenderState : public Packet::SenderState {
     ThreadContext *tc;
     BaseMMU::Translation *translation;
@@ -108,8 +109,14 @@ struct MPTSenderState : public Packet::SenderState {
     MPTSenderState(ThreadContext *tc_, BaseMMU::Translation *tr_)
         : tc(tc_), translation(tr_) {}
 };
+*/
 
 #if MPT_ENABLED
+
+
+extern std::unordered_map<const Request*, std::pair<ThreadContext*, BaseMMU::Translation*>> mptContextMap;
+
+
 struct MPT {
 
     Addr rootPPN; // 根页表物理页号（页号单位）

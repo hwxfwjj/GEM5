@@ -64,6 +64,7 @@
 #include "base/types.hh"      // for Addr, uint64_t 等类型， 否则用不了   //typedef uint64_t Tick;
 #include "base/statistics.hh" //statistics::Scalar
 #include "cpu/translation.hh" //translation  class DataTranslation : public BaseMMU::Translation
+#include "mem/packet.hh"//SenderState
 
 namespace gem5
 {
@@ -77,6 +78,11 @@ using namespace RiscvISA;
 
 
 #if MPT_ENABLED
+
+
+std::unordered_map<const Request*, std::pair<ThreadContext*, BaseMMU::Translation*>> mptContextMap;
+
+
 MPT::MPT() : nextPPN(0x10000) {
     rootPPN = buildSimulatedMPTTree();
 }
@@ -1729,13 +1735,21 @@ TLB::L2TLBCheck(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode, Addr
             if (fault == NoFault) {
                 Addr paddr = (pte.ppn << PageShift) | (vaddr & mask(getPageShiftForLevel(level)));
 
-			//获取 senderState 中的 tc 和 translation
+			//获取tc 和 translation
+            
+                auto it = gem5::RiscvISA::mptContextMap.find(req.get());
+                assert(it != gem5::RiscvISA::mptContextMap.end());
+
+                ThreadContext *tc = it->second.first;
+                BaseMMU::Translation *translation = it->second.second;
+                
+/*depracated
 				auto *mptState = dynamic_cast<MPTSenderState *>(req->getSenderState());
 				assert(mptState != nullptr);
 				
 				ThreadContext *tc = mptState->tc;
 				BaseMMU::Translation *translation = mptState->translation;
-				
+*/				
 				
 				//直接调用异步权限检查
 				checkMPTPermissionFunctionInTLBcc(
@@ -2974,14 +2988,19 @@ TLB::translateTiming(const RequestPtr &req, ThreadContext *tc,
     bool delayed;
     assert(translation);
 
-    req->setSenderState(new MPTSenderState(tc, translation));//JJW
-
+    // 设置全局上下文映射
+    gem5::RiscvISA::mptContextMap[req.get()] = std::make_pair(tc, translation);
+    
     Fault fault = translate(req, tc, translation, mode, delayed);
     if (!delayed){
         translation->finish(fault, req, tc, mode);
+        // 可选：请求结束后清理上下文
+        //gem5::RiscvISA::mptContextMap.erase(req.get());
     }
     else
         translation->markDelayed();
+        // 延迟时不要清理，否则后续异步 finish 时拿不到上下文//可以在 BaseMMU::Translation::finish() 的实现末尾加一行gem5::RiscvISA::mptContextMap.erase(req.get());确保延迟路径也能正确清理。
+
 }
 
 void
