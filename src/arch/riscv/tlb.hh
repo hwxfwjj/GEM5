@@ -414,13 +414,13 @@ class TLB : public BaseTLB
         // Instruction TLB
         statistics::Scalar iTLBMisses;
         statistics::Scalar iTLBHits;
-        statistics::Scalar iTLBAccesses;
+        statistics::Formula iTLBAccesses;
         statistics::Formula iTLBMissRate;
 
         // Data TLB
         statistics::Scalar dTLBMisses;
         statistics::Scalar dTLBHits;
-        statistics::Scalar dTLBAccesses;
+        statistics::Formula dTLBAccesses;
         statistics::Formula dTLBMissRate;
 
     } stats;
