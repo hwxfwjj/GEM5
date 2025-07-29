@@ -183,6 +183,10 @@ class MPTCache52 {
 	
     Addr regionAlign(Addr pa, int level) const;
 
+
+
+  public:
+
     // MPTCache Hit 
     mutable statistics::Scalar mptCacheL0Hits;
     mutable statistics::Scalar mptCacheL1Hits;
@@ -196,8 +200,7 @@ class MPTCache52 {
     mutable statistics::Scalar mptCacheL2Misses;
     mutable statistics::Scalar mptCacheL3Misses;
     mutable statistics::Scalar mptCacheSPMisses;
-
-  public:
+    
     MPTCache52(size_t capL0, size_t capL1, size_t capL2, size_t capL3, size_t capSP);
     MPTCache52();
 
