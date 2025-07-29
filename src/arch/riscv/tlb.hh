@@ -412,14 +412,14 @@ class TLB : public BaseTLB
         statistics::Formula mptMissRate;
 
         // Instruction TLB
-        statistics::Scalar iTLBHits;
         statistics::Scalar iTLBMisses;
+        statistics::Scalar iTLBHits;
         statistics::Scalar iTLBAccesses;
         statistics::Formula iTLBMissRate;
 
         // Data TLB
-        statistics::Scalar dTLBHits;
         statistics::Scalar dTLBMisses;
+        statistics::Scalar dTLBHits;
         statistics::Scalar dTLBAccesses;
         statistics::Formula dTLBMissRate;
 
