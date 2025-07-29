@@ -3299,14 +3299,14 @@ TLB::TlbStats::TlbStats(statistics::Group *parent)
 		ADD_STAT(iTLBMissRate, statistics::units::Ratio::get(), "Instruction TLB miss rate",
 				 iTLBMisses / iTLBAccesses),
 	   
+        ADD_STAT(dTLBMisses, statistics::units::Count::get(), "Data TLB misses",
+         readMisses + writeMisses),
 		ADD_STAT(dTLBHits, statistics::units::Count::get(), "Data TLB hits",
          readHits + writeHits),
-ADD_STAT(dTLBMisses, statistics::units::Count::get(), "Data TLB misses",
-         readMisses + writeMisses),
-ADD_STAT(dTLBAccesses, statistics::units::Count::get(), "Data TLB accesses",
-         readAccesses + writeAccesses),
-ADD_STAT(dTLBMissRate, statistics::units::Ratio::get(), "Data TLB miss rate",
-         dTLBMisses / dTLBAccesses)
+        ADD_STAT(dTLBAccesses, statistics::units::Count::get(), "Data TLB accesses",
+                readAccesses + writeAccesses),
+        ADD_STAT(dTLBMissRate, statistics::units::Ratio::get(), "Data TLB miss rate",
+                dTLBMisses / dTLBAccesses)
 	   
 			   
 			   
