@@ -3480,8 +3480,8 @@ TLB::checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMP
 			
 			// 构造虚拟 cache entry 供 fromEntry 使用
 			MPTCacheEntry fakeEntry = {
-				.tag = regionAlign(paForMPTCheck, level),
-				.mpte = mpte,
+				.tag = MPTCache52::regionAlign(paForMPTCheck, level),
+				.mpte = cacheEntry.mpte,
 				.valid = true,
 				.level = level,
 				.log2RegionSize = log2RegionSize
