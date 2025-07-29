@@ -1742,7 +1742,7 @@ TLB::L2TLBCheck(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode, Addr
 
                 ThreadContext *tc = it->second.first;
                 BaseMMU::Translation *translation = it->second.second;
-                
+
 /*depracated
 				auto *mptState = dynamic_cast<MPTSenderState *>(req->getSenderState());
 				assert(mptState != nullptr);
@@ -3287,10 +3287,10 @@ TLB::TlbStats::TlbStats(statistics::Group *parent)
       ADD_STAT(mptHitRate, statistics::units::Ratio::get(), "MPT hit rate",
                mptTotalHits / mptTotalAccesses),
       ADD_STAT(mptMissRate, statistics::units::Ratio::get(), "MPT miss rate",
-               mptTotalMisses / mptTotalAccesses)
+               mptTotalMisses / mptTotalAccesses),
 
 	   
-		//todo: I/D tlb miss/hit  -->mpt miss/hit	   为了计算总latency
+		// I/D tlb miss/hit  -->mpt miss/hit	   为了计算总latency
 			   
 		ADD_STAT(iTLBMisses, statistics::units::Count::get(), "Instruction TLB misses"),
 		ADD_STAT(iTLBHits, statistics::units::Count::get(), "Instruction TLB hits"),
@@ -3300,13 +3300,13 @@ TLB::TlbStats::TlbStats(statistics::Group *parent)
 				 iTLBMisses / iTLBAccesses),
 	   
 		ADD_STAT(dTLBHits, statistics::units::Count::get(), "Data TLB hits",
-         readHits + writeHits);
+         readHits + writeHits),
 ADD_STAT(dTLBMisses, statistics::units::Count::get(), "Data TLB misses",
-         readMisses + writeMisses);
+         readMisses + writeMisses),
 ADD_STAT(dTLBAccesses, statistics::units::Count::get(), "Data TLB accesses",
-         readAccesses + writeAccesses);
+         readAccesses + writeAccesses),
 ADD_STAT(dTLBMissRate, statistics::units::Ratio::get(), "Data TLB miss rate",
-         dTLBMisses / dTLBAccesses);
+         dTLBMisses / dTLBAccesses)
 	   
 			   
 			   
@@ -3324,7 +3324,7 @@ ADD_STAT(dTLBMissRate, statistics::units::Ratio::get(), "Data TLB miss rate",
 }
 
 
-//JJW
+
 void TLB::regStats()
 {
     BaseTLB::regStats();  // 调用父类的统计注册逻辑
