@@ -3446,7 +3446,7 @@ checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMPTChec
     if (level < 0) {
         //return {4, createMPTPagefault(vaddr, paForMPTCheck, mode)}; // 无效页大小
         DPRINTF(TLB, "Invalid page size → [path=4] vaddr=%#lx\n", vaddr);
-        translation->finish(createMPTPagefault(vaddr, paForMPTCheck, mode), req, tc, mode);
+        translation->finish(TLB::createMPTPagefault(vaddr, paForMPTCheck, mode), req, tc, mode);
         return;		
     }
 
@@ -3505,7 +3505,7 @@ checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMPTChec
 			else
 				return {1, createMPTPagefault(vaddr, paForMPTCheck, mode)};
 		*/
-			Fault fault = hasPerm ? NoFault : createMPTPagefault(vaddr, paForMPTCheck, mode);
+			Fault fault = hasPerm ? NoFault : TLB::createMPTPagefault(vaddr, paForMPTCheck, mode);
 			translation->finish(fault, req, tc, mode);
         }
     );
