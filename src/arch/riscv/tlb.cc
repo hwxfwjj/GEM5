@@ -3618,10 +3618,8 @@ checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMPTChec
 }
 
 
-//JJW  //JJW2
-
 #if MPT_ENABLED
-Fault createMPTPagefault(Addr vaddr, Addr paForMPTCheck, BaseMMU::Mode mode)
+Fault TLB::createMPTPagefault(Addr vaddr, Addr paForMPTCheck, BaseMMU::Mode mode)
 {
     ExceptionCode code;
     switch (mode) {
